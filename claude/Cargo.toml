@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/murmur_core",
+    "crates/murmur_conformance",
+    "crates/murmur_py",
+    "crates/plugins/*",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+
+# The workspace root doubles as a package solely to own `tests/` — the workspace-level
+# architecture-enforcement guards (roadmap.md Phase 2b), which aren't owned by any one crate.
+# No lib/bin target; `tests/*.rs` integration tests are this package's only targets.
+[package]
+name = "murmuration_workspace_guards"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish = false
+
+[dev-dependencies]
+murmur_core = { path = "crates/murmur_core" }
+rand_core = "0.6"
+toml = "0.8"
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[profile.dev]
+opt-level = 1

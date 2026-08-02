@@ -1,0 +1,18 @@
+[package]
+name = "murmur_vicsek"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Vicsek: minimal alignment + angular noise, the classic order-disorder baseline (design/02_plugins.md §5, physics/forces/vicsek.py). Second FlockingMode plugin, proving the seam generalizes beyond Pearce."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }
+murmur_hash_grid = { path = "../murmur_hash_grid" }
+murmur_initializers = { path = "../murmur_initializers" }
+murmur_instant_response = { path = "../murmur_instant_response" }
+murmur_open_domain = { path = "../murmur_open_domain" }
+murmur_radius_gather = { path = "../murmur_radius_gather" }

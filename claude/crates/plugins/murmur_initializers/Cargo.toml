@@ -1,0 +1,12 @@
+[package]
+name = "murmur_initializers"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Default Initializer (SphereShell, SphereVolume, UniformBox) and NoiseSource (UniformSphere) plugins (design/01_core.md §12.5). Bundled in one crate since each is only a few lines."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }

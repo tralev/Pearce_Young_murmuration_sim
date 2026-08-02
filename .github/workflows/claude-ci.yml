@@ -1,0 +1,73 @@
+name: claude-ci
+
+on:
+  push:
+    paths:
+      - "claude/**"
+      - ".github/workflows/claude-ci.yml"
+  pull_request:
+    paths:
+      - "claude/**"
+      - ".github/workflows/claude-ci.yml"
+
+defaults:
+  run:
+    working-directory: claude
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      # murmur_py (pyo3 extension-module) can't be linked by plain `cargo`/clippy — it has no
+      # libpython to resolve against outside maturin's special handling; see the py-bindings
+      # job below, which is where it's actually built/exercised.
+      - run: cargo clippy --workspace --all-targets --exclude murmur_py -- -D warnings
+
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace --exclude murmur_py
+
+  py-bindings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+      - run: maturin develop -m crates/murmur_py/Cargo.toml
+      - run: pytest python/tests -v
+
+  # The 5 hard-gate science acceptance run (roadmap.md §7.1/Phase 9 exit gate: "CI runs
+  # `python -m murmuration.validate.acceptance`; non-zero exit on any hard-gate failure").
+  # Wired faithfully per the design, not softened: as of this pass, P-a passes but P-c/P-d/
+  # Y-a/Y-c do not, at this implementation's current (uncalibrated) default plugin parameters
+  # — see claude/README.md "Current acceptance status" for the honest, documented breakdown.
+  # That calibration work (the pre-coding numpy-prototype de-risking pass, roadmap.md §3 item
+  # 1) was out of scope for this build; this job is deliberately left as a real, currently-
+  # failing gate rather than muted, so the gap stays visible instead of silently hidden.
+  # merge-to-main only, matching design/00's CI plan (this run takes ~1-2 minutes).
+  acceptance:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+      - run: maturin develop --release -m crates/murmur_py/Cargo.toml
+      - run: python -m murmuration.validate.acceptance

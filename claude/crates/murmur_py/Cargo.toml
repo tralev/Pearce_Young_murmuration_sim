@@ -1,0 +1,29 @@
+[package]
+name = "murmur_py"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "pyo3 + numpy bindings for the science path (design/03_observables_bindings.md §2.1)."
+
+[lib]
+name = "_core"
+# "rlib" alongside "cdylib" so `cargo build`/`cargo test` work standalone (no Python
+# interpreter linked in); maturin uses the cdylib target for the actual extension module. This
+# crate deliberately has zero #[test] functions — pyo3's `extension-module` feature doesn't
+# link libpython, so a Rust-level test can't start an embedded interpreter to call into it.
+# Correctness here is exercised via pytest instead (python/tests/), per roadmap.md's own test
+# inventory ("bindings (py) | pytest").
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+murmur_core = { path = "../murmur_core" }
+murmur_hash_grid = { path = "../plugins/murmur_hash_grid" }
+murmur_initializers = { path = "../plugins/murmur_initializers" }
+murmur_instant_response = { path = "../plugins/murmur_instant_response" }
+murmur_open_domain = { path = "../plugins/murmur_open_domain" }
+murmur_pearce = { path = "../plugins/murmur_pearce" }
+murmur_predator = { path = "../plugins/murmur_predator" }
+murmur_radius_gather = { path = "../plugins/murmur_radius_gather" }
+murmur_vicsek = { path = "../plugins/murmur_vicsek" }
+numpy = "0.22"
+pyo3 = { version = "0.22", features = ["extension-module"] }

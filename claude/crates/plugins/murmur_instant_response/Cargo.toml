@@ -1,0 +1,12 @@
+[package]
+name = "murmur_instant_response"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "InstantResponse: the first SteeringModifier plugin (design/01_core.md §8). Memoryless, instant response — what every FlockingMode used to do internally before this trait existed."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }

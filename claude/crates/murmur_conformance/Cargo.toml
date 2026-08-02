@@ -1,0 +1,12 @@
+[package]
+name = "murmur_conformance"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Generic per-trait plugin-conformance test harness (design/00_overview.md D15). A dev-dependency every plugin crate uses to get a ready-made correctness checklist; murmur_core does not depend on this at runtime."
+
+[dependencies]
+murmur_core = { path = "../murmur_core" }
+
+[dev-dependencies]
+rand_core = "0.6"

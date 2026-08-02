@@ -1,0 +1,20 @@
+[package]
+name = "murmur_core"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Murmuration simulation core: infrastructure only (storage, math, RNG, trait sockets, registry, step pipeline). No concrete flocking algorithm lives here — see design/00_overview.md."
+
+[dependencies]
+bitvec = "1"
+rand_chacha = "0.3"
+rand_core = "0.6"
+rayon = "1"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
+
+[lib]
+name = "murmur_core"
+path = "src/lib.rs"

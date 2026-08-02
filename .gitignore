@@ -4,6 +4,9 @@
 /roadmap/
 /design/
 
+# Another AI's separate implementation attempt — not part of this repo's tracked history.
+/deepseek/
+
 # Rust
 /target/
 **/target/
@@ -19,6 +22,11 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .hypothesis/
+
+# Compiled pyo3/maturin extension artifacts (built via `maturin develop`, not source)
+*.so
+*.pyd
+*.dylib
 
 # Editors / OS
 .DS_Store

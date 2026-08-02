@@ -1,0 +1,73 @@
+"""Type stubs for the compiled `_core` extension (design/03_observables_bindings.md §2.1)."""
+
+from typing import Dict, List, Optional
+
+import numpy as np
+import numpy.typing as npt
+
+class Snapshot:
+    """Owned copies of a simulation's active-boid state — safe to keep across further
+    `Simulation.step()` calls."""
+
+    positions: npt.NDArray[np.float64]  # (N, 3), read-only
+    velocities: npt.NDArray[np.float64]  # (N, 3), read-only
+    species: npt.NDArray[np.uint16]  # (N,), read-only
+    opacity: npt.NDArray[np.float64]  # (N,), read-only
+    metrics: Dict[str, float]
+    step_count: int
+    state_hash: int
+
+class Simulation:
+    """A constructed, running simulation. Plugin composition is fixed at construction and
+    never changes for its lifetime (design/00_overview.md "Interaction model")."""
+
+    def __init__(
+        self,
+        boid_count: int,
+        cruise_speed: float = 1.0,
+        max_force: float = 1.0,
+        speed_min_factor: float = 0.3,
+        vision_radius: float = 10.0,
+        dt: float = 1.0,
+        mode: str = "pearce",
+        modifier: str = "instant_response",
+        domain: str = "open",
+        spatial_index: str = "hash_grid",
+        neighbor_selection: str = "radius_gather",
+        speed_model: str = "band",
+        init: str = "sphere_volume",
+        noise: str = "uniform_sphere",
+        phi_p: float = 0.03,
+        phi_a: float = 0.80,
+        sigma: int = 4,
+        body_radius: float = 1.0,
+        anisotropy: float = 1.0,
+        blind_cone_half_angle: float = 0.524,
+        blind_cone_enabled: bool = True,
+        anisotropic_enabled: bool = False,
+        max_candidates: int = 20,
+        steric_enabled: bool = False,
+        steric: float = 0.6,
+        steric_radius_factor: float = 4.0,
+        cell_size: Optional[float] = None,
+        init_radius: float = 1.0,
+        init_seed: int = 0,
+        step_hooks: List[str] = [],
+        predator_count: int = 0,
+        predator_accel: float = 0.4,
+        flight_strength: float = 2.5,
+        danger_radius: Optional[float] = None,
+        predator_speed_factor: float = 2.0,
+    ) -> None: ...
+    def step(self, dt: float, seed: int) -> None: ...
+    def run_batch(self, steps: int, seed: int) -> None: ...
+    def positions(self) -> npt.NDArray[np.float64]: ...  # (N, 3), read-only
+    def velocities(self) -> npt.NDArray[np.float64]: ...  # (N, 3), read-only
+    def species(self) -> npt.NDArray[np.uint16]: ...  # (N,), read-only
+    def opacity(self) -> npt.NDArray[np.float64]: ...  # (N,), read-only
+    def metrics(self) -> Dict[str, float]: ...
+    def describe(self) -> Dict[str, object]: ...
+    def state_hash(self) -> int: ...
+    def boid_count(self) -> int: ...
+    def step_count(self) -> int: ...
+    def snapshot(self) -> Snapshot: ...
