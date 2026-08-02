@@ -1,0 +1,27 @@
+# Planning/reference material — kept locally, not part of the public repo.
+# sci/ in particular holds copyrighted paper PDFs that shouldn't be redistributed.
+/sci/
+/roadmap/
+/design/
+
+# Rust
+/target/
+**/target/
+Cargo.lock
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
+.claude/
