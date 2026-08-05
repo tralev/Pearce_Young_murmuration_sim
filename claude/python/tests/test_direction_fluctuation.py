@@ -52,6 +52,20 @@ def test_classify_growth_recovers_a_perfect_plateau():
 
 
 def test_direction_fluctuation_pipeline_runs_on_a_real_simulation_trajectory():
+    """Real end-to-end smoke test — not a check of *which* growth law wins.
+
+    Unlike information_transfer's live comparison, this one doesn't need a mid-run command:
+    the paper's own methodology (Fig. 1) compares two *independently configured* runs
+    (field always-on vs. always-off from t=0), which `step_hooks=["external_field"]` at
+    construction already supports. Tried directly (see sci/param_table.md's
+    direction_fluctuation.py notes): at N=60/short pytest-scale windows, in this project's
+    cohesion-dominant regime, neither the diffusive nor the plateau model fits well for
+    either the field-on or field-off case (R^2 near zero or negative for both) — the
+    <delta_psi(t)^2> curve itself doesn't cleanly resemble either textbook shape at this
+    scale, a different and more basic issue than a favours-mismatch. Longer runs/larger N
+    (closer to the reference paper's own N~10^5, L=256) are the natural next thing to try,
+    not attempted here.
+    """
     sim = m.Simulation(
         boid_count=50,
         mode="pearce",

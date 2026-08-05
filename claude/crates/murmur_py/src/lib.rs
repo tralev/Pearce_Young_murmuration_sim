@@ -27,7 +27,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use murmur_core::{CoreParams, PluginParams, Registry, SimConfig, Simulation, Species};
+use murmur_core::batch::Command;
+use murmur_core::{CoreParams, PluginParams, Registry, SimConfig, Simulation, Species, Vec3};
 
 fn map_config_error(e: murmur_core::ConfigError) -> PyErr {
     PyValueError::new_err(e.to_string())
@@ -113,6 +114,64 @@ struct PySnapshot {
     step_count: u64,
     #[pyo3(get)]
     state_hash: u64,
+}
+
+/// Wraps `murmur_core::batch::Command` (design/05_viz_contract.md §3, roadmap.md Phase 10) for
+/// Python — Track B's atomic command-queue contract, previously only reachable from Rust/C
+/// (`murmur_ffi`)/the `reference_desktop` consumer. Only the variants with a real behaviour
+/// behind them today are exposed (`AddPredator`, `RemovePredator`, `SetParam`, `Reset`,
+/// `SetCheckpointStride`) — `AddObstacle`/`RemoveObstacle`/`SetEnvironment`/`RequestMetric` are
+/// documented no-ops in Rust too (no `obstacles`/`ecology`/native-H₂ plugin exists yet); adding
+/// Python constructors for commands that can't do anything yet would be misleading, not useful.
+/// `SetParam` only reaches `CoreParams`' live-mutable subset (`cruise_speed`, `max_force`,
+/// `speed_min_factor`, `dt`, `vision_radius`) — plugin-private params (`phi_p`, `field_strength`,
+/// ...) are baked in at construction with no live-mutation path (`batch.rs`'s own module doc).
+#[pyclass(name = "Command")]
+#[derive(Clone)]
+struct PyCommand {
+    inner: Command,
+}
+
+#[pymethods]
+impl PyCommand {
+    #[staticmethod]
+    fn add_predator(x: f64, y: f64, z: f64, vx: f64, vy: f64, vz: f64) -> Self {
+        PyCommand {
+            inner: Command::AddPredator {
+                position: Vec3::new(x, y, z),
+                velocity: Vec3::new(vx, vy, vz),
+            },
+        }
+    }
+
+    #[staticmethod]
+    fn remove_predator(id: u32) -> Self {
+        PyCommand {
+            inner: Command::RemovePredator { id },
+        }
+    }
+
+    #[staticmethod]
+    fn set_param(name: String, value: f64) -> Self {
+        PyCommand {
+            inner: Command::SetParam { name, value },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (count, seed = None))]
+    fn reset(count: u32, seed: Option<u64>) -> Self {
+        PyCommand {
+            inner: Command::Reset { count, seed },
+        }
+    }
+
+    #[staticmethod]
+    fn set_checkpoint_stride(stride: u32) -> Self {
+        PyCommand {
+            inner: Command::SetCheckpointStride { stride },
+        }
+    }
 }
 
 #[pyclass(name = "Simulation")]
@@ -311,6 +370,33 @@ impl PySimulation {
         self.inner.run_batch(steps, seed);
     }
 
+    /// Track B's real batch entry point (`Simulation::run_batch_checked`) — atomically
+    /// validates every command before applying any of them (an invalid command rejects the
+    /// whole queue, simulation untouched, matching `batch.rs`'s own atomicity guarantee), then
+    /// runs `steps` steps. Lets a caller inject a real, controlled stimulus mid-run (e.g.
+    /// `AddPredator`, already proven live via `batch.rs`'s G6 fix) — previously only reachable
+    /// from Rust/C, not Python. Discards the returned `CheckpointBuffer`; read state afterward
+    /// via the existing `positions()`/`velocities()`/`metrics()` accessors, same as `run_batch`.
+    fn run_batch_checked(
+        &mut self,
+        steps: u32,
+        seed: u64,
+        commands: Vec<PyCommand>,
+    ) -> PyResult<()> {
+        let commands: Vec<Command> = commands.into_iter().map(|c| c.inner).collect();
+        self.inner
+            .run_batch_checked(steps, seed, commands)
+            .map_err(|errors| {
+                let msg = errors
+                    .iter()
+                    .map(|e| format!("[{}] {}", e.index, e.reason))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                PyValueError::new_err(msg)
+            })?;
+        Ok(())
+    }
+
     fn positions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         vec3_slice_to_array2(py, &self.inner.positions())
     }
@@ -401,5 +487,6 @@ fn metrics_to_dict<'py>(py: Python<'py>, m: &murmur_core::Metrics) -> PyResult<B
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySimulation>()?;
     m.add_class::<PySnapshot>()?;
+    m.add_class::<PyCommand>()?;
     Ok(())
 }

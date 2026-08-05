@@ -139,14 +139,23 @@ def test_information_transfer_report_runs_on_a_real_simulation_trajectory():
     this suite's own fast-test convention) — not a check of *which* propagation law wins.
 
     Distinguishing linear-vs-diffusive propagation decisively needs a genuine, controlled
-    turn stimulus applied mid-run (a sudden field/predator onset, mirroring the real
-    predator-triggered turns Attanasi et al. analyze) — checked directly (see
-    sci/param_table.md's information_transfer.py notes): under natural fluctuations alone,
-    at this small a scale/window, both `spin_wave` and `instant_response` came back
-    'diffusive', not the clean split the theory predicts. `murmur_py` doesn't yet expose a
-    way to change a running Simulation's parameters (no `SetParam`/command-queue binding to
-    Python, only `step`/`run_batch`) — wiring that up is the real prerequisite for a
-    decisive live comparison, tracked as follow-up work, not attempted here.
+    turn stimulus applied mid-run, mirroring the real predator-triggered turns Attanasi et
+    al. analyze. Two things were tried and found insufficient (see
+    sci/param_table.md's information_transfer.py notes for the full record):
+    (1) natural fluctuations alone, at pytest scale — both `spin_wave` and
+    `instant_response` came back 'diffusive', not the clean split theory predicts;
+    (2) `Command.add_predator` injected mid-run (`run_batch_checked`, now available — see
+    test_batch_commands.py) — this project's `murmur_predator` implements individual
+    *flight*/panic response (each boid flees the danger radius independently), not a
+    coordinated *turn* (the whole flock staying cohesive while redirecting together); the
+    resulting scatter isn't the spatially-localized-origin coherent turn this analysis
+    pipeline's dispersion-curve method assumes, so it doesn't produce a clean discriminator
+    either (both configurations' recovered `density` collapsed toward zero as the flock
+    scattered). A genuinely decisive live test needs either a coordinated-turn stimulus
+    (e.g. `external_field`'s direction suddenly changed — not currently possible mid-run,
+    since its `field_x/y/z` are plugin-private params baked in at construction, no live-
+    mutation path) or a richer predator model with a redirect-not-scatter response (Phase
+    15's own "richer predator FSM" item). Real, separate follow-up work, not attempted here.
     """
     for modifier in ("instant_response", "spin_wave"):
         pos_traj, vel_traj = _record_trajectory(modifier, coupling=1.0, drive=1.0, chi=2.0)

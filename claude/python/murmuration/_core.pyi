@@ -17,6 +17,22 @@ class Snapshot:
     step_count: int
     state_hash: int
 
+class Command:
+    """Track B's atomic command-queue contract (design/05_viz_contract.md §3), for use with
+    `Simulation.run_batch_checked`. Only the variants with a real behaviour behind them today
+    are exposed — see `murmur_py`'s own module doc."""
+
+    @staticmethod
+    def add_predator(x: float, y: float, z: float, vx: float, vy: float, vz: float) -> "Command": ...
+    @staticmethod
+    def remove_predator(id: int) -> "Command": ...
+    @staticmethod
+    def set_param(name: str, value: float) -> "Command": ...
+    @staticmethod
+    def reset(count: int, seed: Optional[int] = None) -> "Command": ...
+    @staticmethod
+    def set_checkpoint_stride(stride: int) -> "Command": ...
+
 class Simulation:
     """A constructed, running simulation. Plugin composition is fixed at construction and
     never changes for its lifetime (design/00_overview.md "Interaction model")."""
@@ -74,6 +90,7 @@ class Simulation:
     ) -> None: ...
     def step(self, dt: float, seed: int) -> None: ...
     def run_batch(self, steps: int, seed: int) -> None: ...
+    def run_batch_checked(self, steps: int, seed: int, commands: List[Command]) -> None: ...
     def positions(self) -> npt.NDArray[np.float64]: ...  # (N, 3), read-only
     def velocities(self) -> npt.NDArray[np.float64]: ...  # (N, 3), read-only
     def species(self) -> npt.NDArray[np.uint16]: ...  # (N,), read-only

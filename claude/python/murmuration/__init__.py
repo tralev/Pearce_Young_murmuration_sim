@@ -3,6 +3,6 @@
 Re-exports the compiled `_core` extension (design/03_observables_bindings.md §2.1).
 """
 
-from ._core import Simulation, Snapshot
+from ._core import Command, Simulation, Snapshot
 
-__all__ = ["Simulation", "Snapshot"]
+__all__ = ["Command", "Simulation", "Snapshot"]
