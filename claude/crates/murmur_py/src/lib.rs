@@ -44,6 +44,8 @@ fn build_registry() -> Registry {
     murmur_initializers::register(&mut reg);
     murmur_predator::register(&mut reg);
     murmur_vicsek::register(&mut reg);
+    murmur_spin_wave::register(&mut reg);
+    murmur_external_field::register(&mut reg);
     reg
 }
 
@@ -154,6 +156,16 @@ impl PySimulation {
         flight_strength = 2.5,
         danger_radius = None,
         predator_speed_factor = 2.0,
+        coupling = 1.0,
+        drive = 1.0,
+        chi = 1.0,
+        plane_normal_x = 0.0,
+        plane_normal_y = 0.0,
+        plane_normal_z = 1.0,
+        field_x = 1.0,
+        field_y = 0.0,
+        field_z = 0.0,
+        field_strength = 0.1,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -193,6 +205,16 @@ impl PySimulation {
         flight_strength: f64,
         danger_radius: Option<f64>,
         predator_speed_factor: f64,
+        coupling: f64,
+        drive: f64,
+        chi: f64,
+        plane_normal_x: f64,
+        plane_normal_y: f64,
+        plane_normal_z: f64,
+        field_x: f64,
+        field_y: f64,
+        field_z: f64,
+        field_strength: f64,
     ) -> PyResult<Self> {
         let core_params = CoreParams::builder()
             .cruise_speed(cruise_speed)
@@ -234,7 +256,17 @@ impl PySimulation {
             .with(
                 "danger_radius",
                 danger_radius.unwrap_or(160.0 * (body_radius / 9.0)),
-            );
+            )
+            .with("coupling", coupling)
+            .with("drive", drive)
+            .with("chi", chi)
+            .with("plane_normal_x", plane_normal_x)
+            .with("plane_normal_y", plane_normal_y)
+            .with("plane_normal_z", plane_normal_z)
+            .with("field_x", field_x)
+            .with("field_y", field_y)
+            .with("field_z", field_z)
+            .with("field_strength", field_strength);
 
         let config = SimConfig {
             mode: mode.to_string(),

@@ -58,6 +58,16 @@ class Simulation:
         flight_strength: float = 2.5,
         danger_radius: Optional[float] = None,
         predator_speed_factor: float = 2.0,
+        coupling: float = 1.0,
+        drive: float = 1.0,
+        chi: float = 1.0,
+        plane_normal_x: float = 0.0,
+        plane_normal_y: float = 0.0,
+        plane_normal_z: float = 1.0,
+        field_x: float = 1.0,
+        field_y: float = 0.0,
+        field_z: float = 0.0,
+        field_strength: float = 0.1,
     ) -> None: ...
     def step(self, dt: float, seed: int) -> None: ...
     def run_batch(self, steps: int, seed: int) -> None: ...

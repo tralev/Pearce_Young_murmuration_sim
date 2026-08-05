@@ -17,6 +17,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 murmur_core = { path = "../murmur_core" }
+murmur_external_field = { path = "../plugins/murmur_external_field" }
 murmur_hash_grid = { path = "../plugins/murmur_hash_grid" }
 murmur_initializers = { path = "../plugins/murmur_initializers" }
 murmur_instant_response = { path = "../plugins/murmur_instant_response" }
@@ -24,6 +25,7 @@ murmur_open_domain = { path = "../plugins/murmur_open_domain" }
 murmur_pearce = { path = "../plugins/murmur_pearce" }
 murmur_predator = { path = "../plugins/murmur_predator" }
 murmur_radius_gather = { path = "../plugins/murmur_radius_gather" }
+murmur_spin_wave = { path = "../plugins/murmur_spin_wave" }
 murmur_vicsek = { path = "../plugins/murmur_vicsek" }
 numpy = "0.22"
 pyo3 = { version = "0.22", features = ["extension-module"] }
