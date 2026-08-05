@@ -193,6 +193,7 @@ mod tests {
             neighbors: &[],
             core_params: &p,
             domain: &domain,
+            step_count: 0,
         };
         let mut acc = Vec3::new(999.0, 999.0, 999.0); // pre-existing value must be overwritten
         hook.post_steer(ctx, &mut acc);
@@ -234,6 +235,7 @@ mod tests {
             neighbors: &[],
             core_params: &p,
             domain: &domain,
+            step_count: 0,
         };
         let mut acc_close = Vec3::ZERO;
         hook.post_steer(ctx_close, &mut acc_close);
@@ -251,6 +253,7 @@ mod tests {
             neighbors: &[],
             core_params: &p,
             domain: &domain,
+            step_count: 0,
         };
         let mut acc_far = Vec3::ZERO;
         hook.post_steer(ctx_far, &mut acc_far);
@@ -279,6 +282,7 @@ mod tests {
             neighbors: &[],
             core_params: &p,
             domain: &domain,
+            step_count: 0,
         };
         let far_ctx = BoidCtx {
             pos: Vec3::new(18.0, 0.0, 0.0),

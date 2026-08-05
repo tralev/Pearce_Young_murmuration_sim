@@ -12,6 +12,10 @@
 **/target/
 Cargo.lock
 
+# Locally-installed dev tooling (e.g. cbindgen, installed via `cargo install --root` to keep
+# it off the boot volume in this environment) — machine-specific, not part of the repo.
+/.tooling/
+
 # Python
 __pycache__/
 *.pyc

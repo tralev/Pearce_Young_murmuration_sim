@@ -5,6 +5,7 @@
 //! implementation (`PearceProjection`, `OpenSpace`, `HashGrid`, ...) is a plugin in its own
 //! crate. See `design/00_overview.md` §2, "Core vs. plugin — the governing rule".
 
+pub mod batch;
 pub mod boids;
 pub mod domain;
 pub mod error;
@@ -23,6 +24,10 @@ pub mod spatial_index;
 pub mod speed_model;
 pub mod step_hook;
 
+pub use batch::{
+    BoidSnapshot, Checkpoint, CheckpointBuffer, Command, CommandError, InterpolationHint,
+    PredatorSnapshot, SessionHeader,
+};
 pub use boids::{BoidColumns, Species};
 pub use domain::Domain;
 pub use error::ConfigError;

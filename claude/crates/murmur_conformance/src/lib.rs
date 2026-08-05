@@ -153,6 +153,7 @@ pub fn flocking_mode(mode: &dyn FlockingMode) {
         neighbors: &neighbors,
         core_params: &params,
         domain: &domain,
+        step_count: 0,
     };
     let mut scratch = OcclusionScratch::default();
 
@@ -196,6 +197,7 @@ pub fn steering_modifier(modifier: &dyn SteeringModifier) {
         neighbors: &neighbors,
         core_params: &params,
         domain: &domain,
+        step_count: 0,
     };
     let acc = modifier.respond(ctx, Vec3::new(0.0, 1.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
     assert!(
@@ -308,6 +310,7 @@ pub fn step_hook(hook: &mut dyn StepHook) {
         neighbors: &neighbors,
         core_params: &ctx_params,
         domain: &domain,
+        step_count: 0,
     };
     let mut acc = Vec3::ZERO;
     hook.post_steer(ctx, &mut acc);

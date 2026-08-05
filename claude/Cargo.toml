@@ -3,8 +3,10 @@ resolver = "2"
 members = [
     "crates/murmur_core",
     "crates/murmur_conformance",
+    "crates/murmur_ffi",
     "crates/murmur_py",
     "crates/plugins/*",
+    "consumers/reference_desktop",
 ]
 
 [workspace.package]

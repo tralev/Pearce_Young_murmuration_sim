@@ -215,6 +215,7 @@ mod tests {
             neighbors: &neighbors,
             core_params: &params,
             domain: &domain,
+            step_count: 0,
         };
         let mut scratch = OcclusionScratch::default();
         let mut rng = murmur_core::rng::for_boid(1, 2, 3);

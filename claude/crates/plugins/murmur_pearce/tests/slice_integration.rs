@@ -55,6 +55,7 @@ fn build_sim(n: u32, seed: u64) -> Simulation {
         init_seed: seed,
         step_hooks: Vec::new(),
         predator_count: 0,
+        spawn_headroom: 0,
     };
     Simulation::new(config, &registry).unwrap()
 }

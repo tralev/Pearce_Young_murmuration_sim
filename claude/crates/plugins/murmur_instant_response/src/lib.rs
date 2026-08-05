@@ -49,6 +49,7 @@ mod tests {
             neighbors: &[],
             core_params,
             domain,
+            step_count: 0,
         }
     }
 

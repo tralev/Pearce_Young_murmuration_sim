@@ -32,6 +32,15 @@ pub struct BoidCtx<'a> {
     pub neighbors: &'a [Neighbor],
     pub core_params: &'a CoreParams,
     pub domain: &'a dyn Domain,
+    /// The simulation's step counter *as of the start of this step* (fixes **G4**,
+    /// roadmap.md §12: originally neither `FlockingMode::desired()` nor
+    /// `SteeringModifier::respond()` had any way to know "when" they were being called —
+    /// needed for time-varying targets like `murmur_influencer`'s Lissajous pursuit, and, as
+    /// discovered building `murmur_spin_wave` (Phase 13), for any modifier holding persistent
+    /// cross-boid state: without a step-boundary signal, such a modifier cannot tell "is this
+    /// neighbour's stored state from last step, or already updated this step by another
+    /// thread" — a real, thread-count-dependent correctness bug, not just a missing feature).
+    pub step_count: u64,
 }
 
 /// `desired_v`: target velocity (direction × speed) — the input to the active

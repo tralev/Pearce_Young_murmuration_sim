@@ -4,16 +4,17 @@
 //!
 //! **Scope note (Track A vs. Track B).** `run_batch`/`run_batch_with_budget` here are the
 //! *Track A* minimal versions — they just loop `step()`, with no `CheckpointBuffer` or
-//! `Command` queue. The full native/C-ABI batch contract (periodic checkpoints, atomically
-//! applied commands — design/05_viz_contract.md) is Track B, roadmap.md Phase 10; this phase
-//! only needs the pipeline itself to exist and be callable in a batch shape.
+//! `Command` queue. Kept as-is rather than removed, so no existing caller breaks. The real
+//! Track B batch contract (periodic checkpoints, atomically applied commands —
+//! design/05_viz_contract.md, roadmap.md Phase 10) is `batch.rs`'s
+//! `Simulation::run_batch_checked`/`run_batch_with_budget_checked`.
 
 use rayon::prelude::*;
 
 use crate::boids::{BoidColumns, Species};
 use crate::domain::Domain;
 use crate::error::ConfigError;
-use crate::init::NoiseSource;
+use crate::init::{Initializer, NoiseSource};
 use crate::math::Vec3;
 use crate::metrics::Metrics;
 use crate::modes::{BoidCtx, FlockingMode, SteeringModifier};
@@ -62,8 +63,17 @@ pub struct SimConfig {
     /// `Species::Prey` (the last `predator_count` of them, by placement order) — `0` by
     /// default. A minimal way to get predators into a simulation for Phase 8's proof that the
     /// `StepHook` seam works; dynamically adding a predator mid-run is Track B's `AddPredator`
-    /// command (design/05_viz_contract.md §3, roadmap.md Phase 10), not built yet.
+    /// command (design/05_viz_contract.md §3, roadmap.md Phase 10).
     pub predator_count: u32,
+    /// Extra `BoidColumns` capacity beyond `core_params.boid_count`, reserved at construction
+    /// for runtime-spawned boids (`Command::AddPredator`, batch.rs). `0` by default — a
+    /// simulation that never expects live spawning pays nothing for this. Fixes **G6**
+    /// (roadmap.md §12): before this field existed, `BoidColumns` was always sized to exactly
+    /// the initial placement count, so `AddPredator` could never succeed even with `predator`
+    /// composed — there was never a free slot. Capacity is still fixed for the simulation's
+    /// lifetime (design/00_overview.md's storage invariant) — this just lets a host that knows
+    /// it wants live spawning reserve room for it up front, rather than growing unboundedly.
+    pub spawn_headroom: u32,
 }
 
 pub struct Simulation {
@@ -78,8 +88,13 @@ pub struct Simulation {
     #[allow(dead_code)] // held for composition/reproducibility; not yet called (no mode uses
     // the standalone NoiseSource trait object internally — Pearce draws its own noise inline)
     pub(crate) noise: Box<dyn NoiseSource>,
+    /// Held (not just consumed at construction) so `Command::Reset` (batch.rs, roadmap.md
+    /// Phase 10) can re-place the flock under the same fixed composition without needing the
+    /// `Registry` again.
+    pub(crate) init: Box<dyn Initializer>,
     pub(crate) step_hooks: Vec<Box<dyn StepHook>>,
     pub(crate) step_count: u64,
+    pub(crate) sim_time: f64,
     pub(crate) metrics: Metrics,
     mode_name: String,
     modifier_name: String,
@@ -89,6 +104,12 @@ pub struct Simulation {
     speed_model_name: String,
     init_name: String,
     noise_name: String,
+    /// batch.rs state — see that module for why each exists.
+    pub(crate) session_id: u64,
+    pub(crate) build_hash: u64,
+    pub(crate) checkpoint_stride: u32,
+    pub(crate) next_boid_seed: u64,
+    pub(crate) accum_max_displacement: f64,
 }
 
 /// Active plugin names per socket, plus the resolved `CoreParams` — the macro→micro
@@ -124,7 +145,12 @@ impl Simulation {
             step_hooks.push(registry.resolve_step_hook(name, &config.plugin_params)?);
         }
 
-        let mut boids = BoidColumns::with_capacity(config.core_params.boid_count);
+        let mut boids = BoidColumns::with_capacity(
+            config
+                .core_params
+                .boid_count
+                .saturating_add(config.spawn_headroom),
+        );
         let mut place_rng = rng::for_boid(config.init_seed, 0, 0);
         let (positions, velocities) = init.place(
             config.core_params.boid_count,
@@ -145,6 +171,17 @@ impl Simulation {
         }
 
         let metrics = Metrics::collect(&boids, 0, config.core_params.cruise_speed);
+        let plugin_names_for_hash = [
+            ("mode", config.mode.as_str()),
+            ("modifier", config.modifier.as_str()),
+            ("domain", config.domain.as_str()),
+            ("spatial_index", config.spatial_index.as_str()),
+            ("neighbor_selection", config.neighbor_selection.as_str()),
+            ("speed_model", config.speed_model.as_str()),
+            ("init", config.init.as_str()),
+            ("noise", config.noise.as_str()),
+        ];
+        let build_hash = crate::batch::fingerprint(&plugin_names_for_hash, &config.core_params);
 
         Ok(Simulation {
             boids,
@@ -156,8 +193,10 @@ impl Simulation {
             spatial_index,
             neighbor_selection,
             noise,
+            init,
             step_hooks,
             step_count: 0,
+            sim_time: 0.0,
             metrics,
             mode_name: config.mode,
             modifier_name: config.modifier,
@@ -167,6 +206,11 @@ impl Simulation {
             speed_model_name: config.speed_model,
             init_name: config.init,
             noise_name: config.noise,
+            session_id: config.init_seed,
+            build_hash,
+            checkpoint_stride: 1,
+            next_boid_seed: n as u64,
+            accum_max_displacement: 0.0,
         })
     }
 
@@ -244,6 +288,7 @@ impl Simulation {
         self.metrics =
             Metrics::collect(&self.boids, self.step_count, self.core_params.cruise_speed);
         self.step_count += 1;
+        self.sim_time += dt;
     }
 
     /// Runs every `StepHook::pre_step` in registration order, ahead of the read phase — a
@@ -307,6 +352,7 @@ impl Simulation {
                         neighbors: &neighbors,
                         core_params,
                         domain,
+                        step_count,
                     };
                     let intent = mode.desired(ctx, scratch, &mut rng);
                     let response = modifier.respond(ctx, intent.desired_v, boids.vel[i]);
@@ -342,6 +388,7 @@ impl Simulation {
                     // the first real StepHook plugin (Phase 8), which doesn't need them anyway
                     // (predator-prey reads global predator state, not local neighbours).
                     core_params: &self.core_params,
+                    step_count: self.step_count,
                     domain,
                 };
                 let mut acc_i = self.boids.acc[idx];
@@ -350,6 +397,8 @@ impl Simulation {
                 }
                 self.boids.acc[idx] = acc_i;
             }
+
+            let pos_before = self.boids.pos[idx];
 
             self.boids.vel[idx] += self.boids.acc[idx] * dt;
             self.speed_model.enforce(
@@ -367,6 +416,13 @@ impl Simulation {
                 self.boids.vel[idx] = sample_unit_sphere(&mut write_rng) * vmin;
             }
             self.boids.acc[idx] = Vec3::ZERO;
+
+            // batch.rs's `InterpolationHint::max_displacement` — a running max across every
+            // step since the last checkpoint capture, reset there (design/05 §2.2).
+            let displacement = (self.boids.pos[idx] - pos_before).len();
+            if displacement > self.accum_max_displacement {
+                self.accum_max_displacement = displacement;
+            }
         }
     }
 
@@ -572,6 +628,7 @@ mod tests {
             init_seed: 1,
             step_hooks: Vec::new(),
             predator_count: 0,
+            spawn_headroom: 0,
         }
     }
 

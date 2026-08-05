@@ -149,6 +149,7 @@ impl PySimulation {
         init_seed = 0,
         step_hooks = Vec::new(),
         predator_count = 0,
+        spawn_headroom = 0,
         predator_accel = 0.4,
         flight_strength = 2.5,
         danger_radius = None,
@@ -187,6 +188,7 @@ impl PySimulation {
         init_seed: u64,
         step_hooks: Vec<String>,
         predator_count: u32,
+        spawn_headroom: u32,
         predator_accel: f64,
         flight_strength: f64,
         danger_radius: Option<f64>,
@@ -248,6 +250,7 @@ impl PySimulation {
             init_seed,
             step_hooks,
             predator_count,
+            spawn_headroom,
         };
 
         let registry = build_registry();

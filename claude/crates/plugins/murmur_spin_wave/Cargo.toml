@@ -1,0 +1,19 @@
+[package]
+name = "murmur_spin_wave"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "SpinWaveResponse: Attanasi et al. 2014's behavioural-inertia SteeringModifier (roadmap.md Phase 13, Track C Tier C1) — 2D-only, per design's own documented fallback (SI Appendix G confirmed unobtainable in this environment, see module doc). Second SteeringModifier occupant after InstantResponse, composing with any FlockingMode."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }
+murmur_instant_response = { path = "../murmur_instant_response" }
+murmur_pearce = { path = "../murmur_pearce" }
+murmur_open_domain = { path = "../murmur_open_domain" }
+murmur_hash_grid = { path = "../murmur_hash_grid" }
+murmur_radius_gather = { path = "../murmur_radius_gather" }
+murmur_initializers = { path = "../murmur_initializers" }
+rayon = "1"

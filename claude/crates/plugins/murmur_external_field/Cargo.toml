@@ -1,0 +1,13 @@
+[package]
+name = "murmur_external_field"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "ExternalField: a constant directional-bias StepHook plugin (roadmap.md Phase 13, Track C Tier C1). Second StepHook occupant after predator, proving the seam is real beyond one very domain-specific hook — deliberately tiny, and unblocks the spontaneous-vs-directed-flocking comparison structure_factor.py/direction_fluctuation.py need in Phase 15."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }
+murmur_predator = { path = "../murmur_predator" }

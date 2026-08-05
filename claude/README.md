@@ -49,28 +49,39 @@ gate fails.
 
 ### Current acceptance status
 
-As of this build, running the harness gives:
+As of this build, running the harness gives (updated 2026-08-05, Phase 14's second calibration
+pass — see `sci/param_table.md` for the full mechanistic investigation and the empirical tests
+behind it):
 
 | Gate | Result | Notes |
 |---|---|---|
 | ★ P-a (internal opacity) | **PASS** | Θ̄ ∈ [0.25, 0.35] at N ∈ {400, 800, 1600} |
-| ★ P-c (density scaling) | FAIL | exponent comes out positive (flock growing denser with N), not ≈ −0.5 |
-| ★ P-d (no fragmentation) | FAIL | `R_max` grows steadily rather than saturating over 10⁴ steps |
-| ★ Y-a (m* ≈ 6–7) | FAIL | comes out as 2 |
-| ★ Y-c (m* vs thickness trend) | FAIL | downstream of Y-a's issue |
+| ★ P-c (density scaling) | FAIL | exponent = 0.031 (target [−0.7, −0.3]) — now flat rather than positive, large improvement, not yet in range |
+| ★ P-d (no fragmentation) | **PASS** | `R_max` stays bounded (13–21) over 10⁴ steps at every tested `phi_p`/`phi_a` pair |
+| ★ Y-a (m* ≈ 6–7) | FAIL | m* = 3 (was 2) — improved, not yet in range |
+| ★ Y-c (m* vs thickness trend) | **PASS** | correct-sign trend, holding across all three phenotypes |
 
-P-c/P-d/Y-a/Y-c failing is coherent, not random: `R_max` growing steadily (P-d) means the flock
-isn't staying self-bounded at long time scales under this build's default `body_radius`/
-`vision_radius`/density combination, which is exactly what drags density scaling (P-c) and the
-H₂ graph structure (Y-a/Y-c) off target too. This is a **parameter calibration gap, not a
-mechanism bug** — `occlude()` itself is unit-tested against all its documented invariants
-(§7 of `design/01_core.md`), and P-a passing shows the internal-opacity feedback loop works
-correctly at the time scale it was checked at. Closing this gap is the job the design's
-pre-coding numpy-prototype de-risking step (`roadmap.md` §3 item 1) was meant to do before any
-Rust was written; that step wasn't produced separately during this build, so the gap is
-inherited here rather than hidden. Tightening `body_radius`/`vision_radius`/initial density
-against that kind of calibration pass — or against `pymurmur` fixtures, once available — is the
-next real step, not a re-run of this harness with different guesses.
+**3 of 5 hard gates now pass** (P-a, P-d, Y-c), up from 2 (P-a, Y-c). The `"murmuration"`
+phenotype's own `phi_p`/`phi_a` moved from `sim_new.md`'s literal `(0.03, 0.80)` to a
+cohesion-dominant `(0.50, 0.20)`, plus `steric_enabled=True` — not a guess, but the result of a
+real mechanistic investigation: at the paper's literal weights, the flock reliably **fragments**
+into several mutually-invisible sub-flocks within ~10–15 steps, because alignment (high `phi_a`)
+locks in *local* heading consensus far faster than cohesion (low `phi_p`) can pull the
+population toward *global* consensus — a structural instability (confirmed independent of
+initial density, `vision_radius`, and `max_candidates`), not a tunable-weight bug. Making
+cohesion genuinely dominate alignment stops the fragmentation outright (confirmed bounded over
+30,000 steps, 3× the gate's own window); `steric` is required alongside it to pull Θ̄ back down
+from cohesion-dominance's own ~0.6+ overshoot into target — neither change alone does both jobs.
+`max_force` and `anisotropic_enabled`/`anisotropy` remain unchanged, tested only against the old
+weights (found to regress P-a there) and not yet re-tested in this new combination. See
+`sci/param_table.md` for the full mechanistic diagnosis and per-change breakdown.
+
+P-c and Y-a failing is no longer the same "flock isn't self-bounded" story as before — P-d is
+now genuinely fixed, and both remaining gates improved substantially alongside it (P-c's
+exponent moved from ≈+1.02 to ≈0.03; Y-a's m* moved from 2 to 3, with the sensing graph now
+confirmed fully connected at every tested `m`). Both are report-confirmed as *closer*, not
+newly caused by anything this pass changed — closing them fully is separate, ongoing tuning
+work, not evidence the fragmentation fix was wrong.
 
 There's a second, related gap worth naming: the design's Phase 7 acceptance also calls for
 comparison against two fixture oracles (a tight-tolerance f64 numpy prototype, and a loose-
@@ -83,10 +94,15 @@ run against this Rust implementation directly; it does not compare against eithe
 
 ```
 crates/
-├── murmur_core/         # infrastructure only — see its module docs
+├── murmur_core/         # infrastructure only — see its module docs (batch.rs: Track B's
+│                         # Command/CheckpointBuffer contract, Simulation::run_batch_checked)
 ├── murmur_conformance/  # per-trait plugin-conformance test harness (dev-dependency)
+├── murmur_ffi/          # extern "C" simulation-control surface (create/destroy/run_batch/
+│                         # checkpoint reads) — cdylib+rlib, Track B Phase 11
 ├── murmur_py/           # pyo3 + numpy bindings (compiles to python/murmuration/_core)
 └── plugins/             # every concrete algorithm/strategy, one crate each
+consumers/
+└── reference_desktop/   # minimal desktop reference consumer — Track B Phase 12
 python/
 ├── murmuration/          # the Python package (re-exports _core; analysis/, validate/)
 └── tests/                 # pytest suite
@@ -96,8 +112,19 @@ fixtures/golden/          # pinned state_hash regression fixtures
 
 ## Notes on scope
 
-This build follows `roadmap.md`'s phases 1–9 (Track A: the science core + Python path).
-Track B (the native/C-ABI batch+checkpoint contract, `run_batch`'s full `CheckpointBuffer`/
-`Command` machinery) and Track C (the deferred plugin catalogue — obstacles, ecology, H₂'s
-Rust-native eigensolver path, etc.) are not built. `run_batch`/`run_batch_with_budget` here are
-Track A's minimal loop-only versions.
+This build follows `roadmap.md`'s phases 1–9 (Track A: the science core + Python path) and all
+of Track B, Phases 10–12: the real batch/command contract (`Simulation::run_batch_checked`/
+`run_batch_with_budget_checked` in `murmur_core/src/batch.rs`), the `murmur_ffi` C ABI crate,
+and `consumers/reference_desktop` — a minimal desktop consumer that calls `murmur_ffi`'s actual
+`extern "C"` surface, plays back checkpoints (ASCII rendering + `interpolation_hint`-driven
+sub-frame interpolation), and injects an `AddPredator` command to prove it visibly changes the
+next batch (`cargo run -p reference_desktop`, or `--headless` for the scripted regression-proxy
+variant `tests/headless_smoke.rs` exercises). Track A's original `run_batch`/
+`run_batch_with_budget` (loop-only, no checkpoints/commands) are kept alongside as-is so no
+existing caller breaks — the `_checked` methods and `murmur_ffi` are the real Track B surface.
+`murmur_ffi`'s generated C header (`include/murmur_ffi.h`, via `cbindgen`) is built and checked
+in, and proven to actually link and run from real C by `crates/murmur_ffi/tests/c_smoke.rs`.
+Only `murmur_ffi`'s iOS/Android cross-compile and the QEMU ARM runtime smoke remain unbuilt in
+this environment — `rustup` isn't installed here; see that crate's module doc. Track C
+(the deferred plugin catalogue — obstacles, ecology, H₂'s Rust-native eigensolver path, etc.)
+is not built.

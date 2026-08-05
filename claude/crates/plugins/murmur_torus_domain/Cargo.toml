@@ -1,0 +1,13 @@
+[package]
+name = "murmur_torus_domain"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Torus: periodic-box Domain plugin (roadmap.md Phase 13, Track C Tier C1) — minimum-image delta() + wrap apply(). Second Domain occupant, proving the seam is real beyond OpenSpace; also unblocks re-running Vicsek's order-disorder test in the actual periodic regime the literature studies it in, without open space's cohesion-free fragmentation issue."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }
+murmur_open_domain = { path = "../murmur_open_domain" }

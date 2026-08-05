@@ -16,3 +16,4 @@ murmur_initializers = { path = "../murmur_initializers" }
 murmur_instant_response = { path = "../murmur_instant_response" }
 murmur_open_domain = { path = "../murmur_open_domain" }
 murmur_radius_gather = { path = "../murmur_radius_gather" }
+murmur_torus_domain = { path = "../murmur_torus_domain" }

@@ -1,0 +1,13 @@
+[package]
+name = "murmur_kdtree_index"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "KdTree: a real k-d tree SpatialIndex plugin (roadmap.md Phase 13, Track C Tier C1). Second SpatialIndex occupant, proving the seam is real beyond HashGrid — and offering a genuine O(log N)-average range/k-NN query strategy rather than HashGrid's expanding-cell-sweep approximation."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }
+murmur_hash_grid = { path = "../murmur_hash_grid" }

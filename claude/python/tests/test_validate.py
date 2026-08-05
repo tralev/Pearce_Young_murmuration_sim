@@ -22,8 +22,10 @@ def test_p_c_returns_a_finite_exponent():
 
 
 def test_p_d_returns_a_trace_per_phi_p():
-    out = results.p_d_no_fragmentation(phi_ps=(0.03, 0.2), n=60, steps=200, check_every=100)
-    assert set(out.keys()) == {0.03, 0.2}
+    out = results.p_d_no_fragmentation(
+        phi_p_phi_a_pairs=((0.50, 0.20), (0.70, 0.10)), n=60, steps=200, check_every=100
+    )
+    assert set(out.keys()) == {0.50, 0.70}
     for trace in out.values():
         assert len(trace) == 2
         assert all(v > 0 for v in trace)

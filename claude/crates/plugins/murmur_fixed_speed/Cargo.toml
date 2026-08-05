@@ -1,0 +1,12 @@
+[package]
+name = "murmur_fixed_speed"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "FixedSpeed: a constant-speed SpeedModel plugin (roadmap.md Phase 13, Track C Tier C1) — every boid's speed is locked to exactly cruise_speed * speed_factor, species-agnostic, no range like BandSpeed. Second SpeedModel occupant, proving the seam is real beyond the one core-exception implementation (BandSpeed)."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }

@@ -1,0 +1,23 @@
+[package]
+name = "murmur_ffi"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "The extern \"C\" simulation-control surface (design/05_viz_contract.md §4, roadmap.md Phase 11). Simulation-control only (D19) — create/destroy, run_batch, checkpoint reads, describe/composition. No screen-space math, no capability probe, no config-dump beyond composition()."
+
+# cdylib for real C consumers; rlib so this crate's own Rust-side round-trip tests (the Phase
+# 11 exit gate's \"Rust-side test harness linking the compiled cdylib\") can link it directly
+# without needing a separate C toolchain in this environment.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+murmur_core = { path = "../murmur_core" }
+murmur_pearce = { path = "../plugins/murmur_pearce" }
+murmur_vicsek = { path = "../plugins/murmur_vicsek" }
+murmur_instant_response = { path = "../plugins/murmur_instant_response" }
+murmur_open_domain = { path = "../plugins/murmur_open_domain" }
+murmur_hash_grid = { path = "../plugins/murmur_hash_grid" }
+murmur_radius_gather = { path = "../plugins/murmur_radius_gather" }
+murmur_initializers = { path = "../plugins/murmur_initializers" }
+murmur_predator = { path = "../plugins/murmur_predator" }
