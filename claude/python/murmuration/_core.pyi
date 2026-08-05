@@ -68,6 +68,9 @@ class Simulation:
         field_y: float = 0.0,
         field_z: float = 0.0,
         field_strength: float = 0.1,
+        half_extent: float = 50.0,
+        knn_k: int = 6,
+        speed_factor: float = 1.0,
     ) -> None: ...
     def step(self, dt: float, seed: int) -> None: ...
     def run_batch(self, steps: int, seed: int) -> None: ...

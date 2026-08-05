@@ -1,0 +1,77 @@
+"""Smoke tests proving every plugin registered in murmur_py's build_registry() is actually
+selectable and runnable from Python — not just built and tested in Rust. Several Track C
+Phase 13 plugins (murmur_spin_wave, murmur_external_field, murmur_torus_domain,
+murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed) were registered in
+murmur_core's own registry and had real Rust test suites, but were never added to
+murmur_py's registry — there was no way to even construct a Simulation using any of them
+from Python. This file exists so that gap can't silently reopen: each plugin gets a small,
+real construct-and-run check, one per trait socket it fills.
+"""
+
+import numpy as np
+
+import murmuration as m
+
+
+def test_torus_domain_wraps_positions_within_half_extent():
+    sim = m.Simulation(boid_count=60, domain="torus", half_extent=20.0, init_radius=15.0)
+    for _ in range(50):
+        sim.run_batch(5, 0)
+    pos = sim.positions()
+    assert np.all(np.abs(pos) <= 20.0 + 1e-6)
+
+
+def test_kdtree_index_runs_and_matches_hash_grid_order_of_magnitude():
+    kd = m.Simulation(boid_count=100, spatial_index="kdtree_index", init_radius=15.0, init_seed=2)
+    kd.run_batch(20, 0)
+    grid = m.Simulation(boid_count=100, spatial_index="hash_grid", init_radius=15.0, init_seed=2)
+    grid.run_batch(20, 0)
+    # Same composition otherwise, same seed: not required to be bit-identical (different
+    # candidate-ordering internals), but both should reach a plausible, comparable regime.
+    assert np.isfinite(kd.metrics()["opacity_int"])
+    assert 0.0 <= kd.metrics()["polarisation"] <= 1.0
+    assert abs(kd.metrics()["mean_nn"] - grid.metrics()["mean_nn"]) < 2.0
+
+
+def test_knn_selection_gives_every_boid_up_to_k_neighbours_worth_of_signal():
+    sim = m.Simulation(boid_count=80, neighbor_selection="knn_selection", knn_k=5, init_radius=15.0)
+    sim.run_batch(10, 0)
+    m_ = sim.metrics()
+    assert np.isfinite(m_["opacity_int"])
+    assert 0.0 <= m_["polarisation"] <= 1.0
+
+
+def test_fixed_speed_locks_every_boid_to_cruise_speed_times_factor():
+    sim = m.Simulation(boid_count=50, speed_model="fixed_speed", speed_factor=1.5, cruise_speed=2.0)
+    sim.run_batch(10, 0)
+    speeds = np.linalg.norm(sim.velocities(), axis=1)
+    assert np.allclose(speeds, 3.0, atol=1e-6)
+
+
+def test_external_field_step_hook_biases_mean_velocity_toward_the_field_direction():
+    sim = m.Simulation(
+        boid_count=60,
+        step_hooks=["external_field"],
+        field_x=1.0,
+        field_y=0.0,
+        field_z=0.0,
+        field_strength=0.5,
+        init_radius=15.0,
+    )
+    sim.run_batch(30, 0)
+    mean_vel = sim.velocities().mean(axis=0)
+    assert mean_vel[0] > 0.0  # net drift toward +X, the field direction
+
+
+def test_spin_wave_modifier_runs_and_produces_finite_state():
+    sim = m.Simulation(
+        boid_count=50,
+        modifier="spin_wave",
+        coupling=1.0,
+        drive=1.0,
+        chi=1.0,
+        init_radius=15.0,
+    )
+    sim.run_batch(20, 0)
+    assert np.all(np.isfinite(sim.velocities()))
+    assert np.all(np.isfinite(sim.positions()))

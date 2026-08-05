@@ -46,6 +46,10 @@ fn build_registry() -> Registry {
     murmur_vicsek::register(&mut reg);
     murmur_spin_wave::register(&mut reg);
     murmur_external_field::register(&mut reg);
+    murmur_torus_domain::register(&mut reg);
+    murmur_kdtree_index::register(&mut reg);
+    murmur_knn_selection::register(&mut reg);
+    murmur_fixed_speed::register(&mut reg);
     reg
 }
 
@@ -166,6 +170,9 @@ impl PySimulation {
         field_y = 0.0,
         field_z = 0.0,
         field_strength = 0.1,
+        half_extent = 50.0,
+        knn_k = 6,
+        speed_factor = 1.0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -215,6 +222,9 @@ impl PySimulation {
         field_y: f64,
         field_z: f64,
         field_strength: f64,
+        half_extent: f64,
+        knn_k: u32,
+        speed_factor: f64,
     ) -> PyResult<Self> {
         let core_params = CoreParams::builder()
             .cruise_speed(cruise_speed)
@@ -266,7 +276,10 @@ impl PySimulation {
             .with("field_x", field_x)
             .with("field_y", field_y)
             .with("field_z", field_z)
-            .with("field_strength", field_strength);
+            .with("field_strength", field_strength)
+            .with("half_extent", half_extent)
+            .with("k", knn_k as f64)
+            .with("speed_factor", speed_factor);
 
         let config = SimConfig {
             mode: mode.to_string(),
