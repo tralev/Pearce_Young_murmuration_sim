@@ -87,6 +87,22 @@ class Simulation:
         half_extent: float = 50.0,
         knn_k: int = 6,
         speed_factor: float = 1.0,
+        awareness_radius: Optional[float] = None,
+        wave_trigger_radius: Optional[float] = None,
+        wave_relay_radius: Optional[float] = None,
+        strike_distance: Optional[float] = None,
+        approach_max_steps: int = 120,
+        egress_steps: int = 40,
+        push_strength: float = 4.0,
+        wake_strength: float = 1.5,
+        wake_corridor_radius: Optional[float] = None,
+        blackening_strength: float = 0.3,
+        blackening_neighbors: int = 6,
+        split_strength: float = 1.0,
+        split_trigger: float = 0.5,
+        wave_strength: float = 1.0,
+        wave_decay: float = 0.85,
+        wave_relay_gain: float = 0.9,
     ) -> None: ...
     def step(self, dt: float, seed: int) -> None: ...
     def run_batch(self, steps: int, seed: int) -> None: ...

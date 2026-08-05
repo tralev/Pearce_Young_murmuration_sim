@@ -27,6 +27,7 @@ murmur_knn_selection = { path = "../plugins/murmur_knn_selection" }
 murmur_open_domain = { path = "../plugins/murmur_open_domain" }
 murmur_pearce = { path = "../plugins/murmur_pearce" }
 murmur_predator = { path = "../plugins/murmur_predator" }
+murmur_predator_fsm = { path = "../plugins/murmur_predator_fsm" }
 murmur_radius_gather = { path = "../plugins/murmur_radius_gather" }
 murmur_spin_wave = { path = "../plugins/murmur_spin_wave" }
 murmur_torus_domain = { path = "../plugins/murmur_torus_domain" }

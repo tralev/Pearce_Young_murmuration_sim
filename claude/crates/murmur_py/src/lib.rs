@@ -51,6 +51,7 @@ fn build_registry() -> Registry {
     murmur_kdtree_index::register(&mut reg);
     murmur_knn_selection::register(&mut reg);
     murmur_fixed_speed::register(&mut reg);
+    murmur_predator_fsm::register(&mut reg);
     reg
 }
 
@@ -232,6 +233,22 @@ impl PySimulation {
         half_extent = 50.0,
         knn_k = 6,
         speed_factor = 1.0,
+        awareness_radius = None,
+        wave_trigger_radius = None,
+        wave_relay_radius = None,
+        strike_distance = None,
+        approach_max_steps = 120,
+        egress_steps = 40,
+        push_strength = 4.0,
+        wake_strength = 1.5,
+        wake_corridor_radius = None,
+        blackening_strength = 0.3,
+        blackening_neighbors = 6,
+        split_strength = 1.0,
+        split_trigger = 0.5,
+        wave_strength = 1.0,
+        wave_decay = 0.85,
+        wave_relay_gain = 0.9,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -284,6 +301,22 @@ impl PySimulation {
         half_extent: f64,
         knn_k: u32,
         speed_factor: f64,
+        awareness_radius: Option<f64>,
+        wave_trigger_radius: Option<f64>,
+        wave_relay_radius: Option<f64>,
+        strike_distance: Option<f64>,
+        approach_max_steps: u32,
+        egress_steps: u32,
+        push_strength: f64,
+        wake_strength: f64,
+        wake_corridor_radius: Option<f64>,
+        blackening_strength: f64,
+        blackening_neighbors: u32,
+        split_strength: f64,
+        split_trigger: f64,
+        wave_strength: f64,
+        wave_decay: f64,
+        wave_relay_gain: f64,
     ) -> PyResult<Self> {
         let core_params = CoreParams::builder()
             .cruise_speed(cruise_speed)
@@ -294,6 +327,8 @@ impl PySimulation {
             .vision_radius(vision_radius)
             .build()
             .map_err(map_config_error)?;
+
+        let danger_radius_resolved = danger_radius.unwrap_or(160.0 * (body_radius / 9.0));
 
         let plugin_params = PluginParams::new()
             .with("phi_p", phi_p)
@@ -322,10 +357,38 @@ impl PySimulation {
             .with("predator_accel", predator_accel)
             .with("flight_strength", flight_strength)
             .with("predator_speed_factor", predator_speed_factor)
+            .with("danger_radius", danger_radius_resolved)
             .with(
-                "danger_radius",
-                danger_radius.unwrap_or(160.0 * (body_radius / 9.0)),
+                "awareness_radius",
+                awareness_radius.unwrap_or(danger_radius_resolved * 2.5),
             )
+            .with(
+                "wave_trigger_radius",
+                wave_trigger_radius.unwrap_or(danger_radius_resolved * 1.5),
+            )
+            .with(
+                "wave_relay_radius",
+                wave_relay_radius.unwrap_or(danger_radius_resolved * 0.5),
+            )
+            .with(
+                "strike_distance",
+                strike_distance.unwrap_or(danger_radius_resolved * 0.15),
+            )
+            .with("approach_max_steps", approach_max_steps as f64)
+            .with("egress_steps", egress_steps as f64)
+            .with("push_strength", push_strength)
+            .with("wake_strength", wake_strength)
+            .with(
+                "wake_corridor_radius",
+                wake_corridor_radius.unwrap_or(danger_radius_resolved * 0.5),
+            )
+            .with("blackening_strength", blackening_strength)
+            .with("blackening_neighbors", blackening_neighbors as f64)
+            .with("split_strength", split_strength)
+            .with("split_trigger", split_trigger)
+            .with("wave_strength", wave_strength)
+            .with("wave_decay", wave_decay)
+            .with("wave_relay_gain", wave_relay_gain)
             .with("coupling", coupling)
             .with("drive", drive)
             .with("chi", chi)

@@ -1,9 +1,9 @@
 """Smoke tests proving every plugin registered in murmur_py's build_registry() is actually
 selectable and runnable from Python — not just built and tested in Rust. Several Track C
-Phase 13 plugins (murmur_spin_wave, murmur_external_field, murmur_torus_domain,
-murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed) were registered in
-murmur_core's own registry and had real Rust test suites, but were never added to
-murmur_py's registry — there was no way to even construct a Simulation using any of them
+Phase 13/15 plugins (murmur_spin_wave, murmur_external_field, murmur_torus_domain,
+murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed, murmur_predator_fsm) were
+registered in murmur_core's own registry and had real Rust test suites, but were never added
+to murmur_py's registry — there was no way to even construct a Simulation using any of them
 from Python. This file exists so that gap can't silently reopen: each plugin gets a small,
 real construct-and-run check, one per trait socket it fills.
 """
@@ -75,3 +75,22 @@ def test_spin_wave_modifier_runs_and_produces_finite_state():
     sim.run_batch(20, 0)
     assert np.all(np.isfinite(sim.velocities()))
     assert np.all(np.isfinite(sim.positions()))
+
+
+def test_predator_fsm_step_hook_runs_and_produces_finite_state():
+    sim = m.Simulation(
+        boid_count=60,
+        mode="pearce",
+        phi_p=0.50,
+        phi_a=0.20,
+        steric_enabled=True,
+        steric=0.6,
+        step_hooks=["predator_fsm"],
+        predator_count=1,
+        danger_radius=10.0,
+        init_radius=8.0,
+    )
+    sim.run_batch(50, 0)
+    assert np.all(np.isfinite(sim.velocities()))
+    assert np.all(np.isfinite(sim.positions()))
+    assert 1 in sim.species()  # the predator boid is present (Species::Predator tag)
