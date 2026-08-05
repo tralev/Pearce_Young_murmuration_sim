@@ -52,6 +52,7 @@ fn build_registry() -> Registry {
     murmur_knn_selection::register(&mut reg);
     murmur_fixed_speed::register(&mut reg);
     murmur_predator_fsm::register(&mut reg);
+    murmur_young::register(&mut reg);
     reg
 }
 
@@ -249,6 +250,13 @@ impl PySimulation {
         wave_strength = 1.0,
         wave_decay = 0.85,
         wave_relay_gain = 0.9,
+        m_min = 2,
+        m_max = 12,
+        m_fallback = 6,
+        refresh_interval = 20,
+        align_weight = 0.5,
+        cohesion_weight = 0.3,
+        noise_weight = 0.2,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -317,6 +325,13 @@ impl PySimulation {
         wave_strength: f64,
         wave_decay: f64,
         wave_relay_gain: f64,
+        m_min: u32,
+        m_max: u32,
+        m_fallback: u32,
+        refresh_interval: u32,
+        align_weight: f64,
+        cohesion_weight: f64,
+        noise_weight: f64,
     ) -> PyResult<Self> {
         let core_params = CoreParams::builder()
             .cruise_speed(cruise_speed)
@@ -389,6 +404,13 @@ impl PySimulation {
             .with("wave_strength", wave_strength)
             .with("wave_decay", wave_decay)
             .with("wave_relay_gain", wave_relay_gain)
+            .with("m_min", m_min as f64)
+            .with("m_max", m_max as f64)
+            .with("m_fallback", m_fallback as f64)
+            .with("refresh_interval", refresh_interval as f64)
+            .with("align_weight", align_weight)
+            .with("cohesion_weight", cohesion_weight)
+            .with("noise_weight", noise_weight)
             .with("coupling", coupling)
             .with("drive", drive)
             .with("chi", chi)

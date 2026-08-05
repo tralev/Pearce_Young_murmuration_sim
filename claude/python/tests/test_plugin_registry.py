@@ -1,11 +1,11 @@
 """Smoke tests proving every plugin registered in murmur_py's build_registry() is actually
 selectable and runnable from Python — not just built and tested in Rust. Several Track C
-Phase 13/15 plugins (murmur_spin_wave, murmur_external_field, murmur_torus_domain,
-murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed, murmur_predator_fsm) were
-registered in murmur_core's own registry and had real Rust test suites, but were never added
-to murmur_py's registry — there was no way to even construct a Simulation using any of them
-from Python. This file exists so that gap can't silently reopen: each plugin gets a small,
-real construct-and-run check, one per trait socket it fills.
+Phase 13/14/15 plugins (murmur_spin_wave, murmur_external_field, murmur_torus_domain,
+murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed, murmur_predator_fsm,
+murmur_young) were registered in murmur_core's own registry and had real Rust test suites, but
+were never added to murmur_py's registry — there was no way to even construct a Simulation
+using any of them from Python. This file exists so that gap can't silently reopen: each plugin
+gets a small, real construct-and-run check, one per trait socket it fills.
 """
 
 import numpy as np
@@ -94,3 +94,18 @@ def test_predator_fsm_step_hook_runs_and_produces_finite_state():
     assert np.all(np.isfinite(sim.velocities()))
     assert np.all(np.isfinite(sim.positions()))
     assert 1 in sim.species()  # the predator boid is present (Species::Predator tag)
+
+
+def test_young_mode_runs_and_produces_finite_state():
+    sim = m.Simulation(
+        boid_count=100,
+        mode="young",
+        m_min=2,
+        m_max=12,
+        m_fallback=6,
+        refresh_interval=10,
+        init_radius=10.0,
+    )
+    sim.run_batch(50, 0)
+    assert np.all(np.isfinite(sim.velocities()))
+    assert np.all(np.isfinite(sim.positions()))

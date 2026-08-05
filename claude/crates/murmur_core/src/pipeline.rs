@@ -283,6 +283,7 @@ impl Simulation {
         let dt = dt.clamp(0.0, DT_MAX);
         self.spatial_index.rebuild(&self.boids);
         self.run_pre_step_hooks();
+        self.mode.pre_step(&self.boids, self.step_count);
         self.read_phase(base_seed);
         self.write_phase(dt, base_seed);
         self.metrics =

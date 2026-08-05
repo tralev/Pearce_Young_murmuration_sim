@@ -9,6 +9,7 @@ pub mod batch;
 pub mod boids;
 pub mod domain;
 pub mod error;
+pub mod h2;
 pub mod init;
 pub mod kernels;
 pub mod math;
@@ -31,6 +32,7 @@ pub use batch::{
 pub use boids::{BoidColumns, Species};
 pub use domain::Domain;
 pub use error::ConfigError;
+pub use h2::{h2_at_m, m_star, H2Result};
 pub use init::{Initializer, NoiseSource};
 pub use kernels::{AlignmentKernel, CohesionKernel, SeparationKernel};
 pub use math::{clamp_len, Vec3, MIN_LEN, MIN_LEN2};

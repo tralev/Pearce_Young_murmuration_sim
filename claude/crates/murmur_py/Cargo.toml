@@ -32,5 +32,6 @@ murmur_radius_gather = { path = "../plugins/murmur_radius_gather" }
 murmur_spin_wave = { path = "../plugins/murmur_spin_wave" }
 murmur_torus_domain = { path = "../plugins/murmur_torus_domain" }
 murmur_vicsek = { path = "../plugins/murmur_vicsek" }
+murmur_young = { path = "../plugins/murmur_young" }
 numpy = "0.22"
 pyo3 = { version = "0.22", features = ["extension-module"] }

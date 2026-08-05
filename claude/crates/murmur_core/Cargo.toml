@@ -7,6 +7,7 @@ description = "Murmuration simulation core: infrastructure only (storage, math, 
 
 [dependencies]
 bitvec = "1"
+nalgebra = "0.35"
 rand_chacha = "0.3"
 rand_core = "0.6"
 rayon = "1"

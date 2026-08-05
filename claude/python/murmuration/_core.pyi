@@ -103,6 +103,13 @@ class Simulation:
         wave_strength: float = 1.0,
         wave_decay: float = 0.85,
         wave_relay_gain: float = 0.9,
+        m_min: int = 2,
+        m_max: int = 12,
+        m_fallback: int = 6,
+        refresh_interval: int = 20,
+        align_weight: float = 0.5,
+        cohesion_weight: float = 0.3,
+        noise_weight: float = 0.2,
     ) -> None: ...
     def step(self, dt: float, seed: int) -> None: ...
     def run_batch(self, steps: int, seed: int) -> None: ...

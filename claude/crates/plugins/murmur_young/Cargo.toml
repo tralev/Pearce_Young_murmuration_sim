@@ -1,0 +1,18 @@
+[package]
+name = "murmur_young"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "YoungConsensus: consensus-alignment + cohesion + steric FlockingMode using a real, per-step m* (roadmap.md Phase 14) — droidmur's own on-device pattern as prior art for the approach only (Spectra/C++, not a Rust dependency to replicate; murmur_core::h2's nalgebra-based eigensolver is this project's own Rust-native path, Phase 14's H2 spike promoted into core)."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }
+murmur_instant_response = { path = "../murmur_instant_response" }
+murmur_open_domain = { path = "../murmur_open_domain" }
+murmur_hash_grid = { path = "../murmur_hash_grid" }
+murmur_radius_gather = { path = "../murmur_radius_gather" }
+murmur_initializers = { path = "../murmur_initializers" }
+rayon = "1"

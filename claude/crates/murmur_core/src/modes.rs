@@ -12,7 +12,7 @@
 //! occlusion scratch as its own parameter and returns `theta` as part of `SteerIntent` instead
 //! of writing through a borrowed output slot.
 
-use crate::boids::Species;
+use crate::boids::{BoidColumns, Species};
 use crate::domain::Domain;
 use crate::math::Vec3;
 use crate::neighbor::Neighbor;
@@ -56,6 +56,20 @@ pub struct SteerIntent {
 }
 
 pub trait FlockingMode: Send + Sync {
+    /// Runs once per step, sequentially, *before* the parallel read phase — the seam
+    /// `desired()` itself doesn't have (**G7**, roadmap.md §12, found and fixed the same day
+    /// building `murmur_young`, Phase 14: `desired()`'s `&self` + per-boid `BoidCtx` genuinely
+    /// cannot see any *other* boid's state, and no earlier `FlockingMode` needed to — Pearce/
+    /// Vicsek both compute everything from one boid's own `ctx.neighbors`). A mode that needs
+    /// a real population-level aggregate (e.g. `murmur_young`'s H₂/m* curve, inherently a
+    /// whole-flock quantity, not a per-boid one) precomputes it here into its own interior-
+    /// mutable cache (a `Mutex`, the same discipline `murmur_spin_wave`/`murmur_predator_fsm`
+    /// already use for cross-boid state under a `&self`-only method) and `desired()` reads the
+    /// cache. Default no-op — every mode before `murmur_young` computed everything from its own
+    /// `ctx.neighbors`, so this costs nothing for them, matching G4/G6's own "fix lazily, when
+    /// actually needed" precedent (D22b).
+    fn pre_step(&self, _boids: &BoidColumns, _step_count: u64) {}
+
     /// What this boid wants to do — NOT yet clamped to `max_force`. The active
     /// `SteeringModifier` converts this into the boid's actual acceleration.
     fn desired(
