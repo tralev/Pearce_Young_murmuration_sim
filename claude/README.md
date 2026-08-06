@@ -160,8 +160,11 @@ list, not one per force channel) all exist, are tested, and are wired into `murm
 `murmur_core::kernels`'s `SeparationKernel`/`AlignmentKernel`/`CohesionKernel` toolkit, which
 existed since Phase 1 with zero implementations), `murmur_angle` (turn-rate-limited heading —
 the first `FlockingMode` to use the plugin-owned per-boid side-column pattern, design/01_core.md
-§2), and `murmur_influencer` (rank/distance-weighted attractor pursuing a moving Lissajous
-target — the first `FlockingMode` to need G4's real elapsed simulated time) are all done;
-`murmur_field` and `murmur_maxent_social` (needs G5) are not. Obstacles (SDF/CSG avoidance)
+§2), `murmur_influencer` (rank/distance-weighted attractor pursuing a moving Lissajous
+target — the first `FlockingMode` to need G4's real elapsed simulated time), and
+`murmur_maxent_social` (5-channel generative model after Cai et al. 2021's maximum-entropy
+framework, arXiv:2112.15560 — fixed **G5**, `Domain::boundary_distance()`, to build its
+boundary channel; verified to reduce to Vicsek's own mean-heading rule when only alignment is
+active) are all done; only `murmur_field` is not. Obstacles (SDF/CSG avoidance)
 and ecology
 (predator/prey population dynamics beyond the FSM) — Phase 18 — are not built.

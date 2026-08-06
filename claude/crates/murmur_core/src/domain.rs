@@ -11,5 +11,22 @@ pub trait Domain: Send + Sync {
     /// Applies any positional constraint after integration (no-op for open space; wraps for a
     /// torus; clamps/nudges for a bounded domain).
     fn apply(&self, pos: &mut Vec3, vel: &mut Vec3, dt: f64);
+
+    /// Distance to, and inward-pointing unit normal at, the nearest boundary point from `pos` —
+    /// `None` for a domain with no boundary concept at all (`OpenSpace`, `Torus`'s periodic
+    /// wrap). Fixes **G5** (roadmap.md §12): a force-computing seam (`FlockingMode::desired()`,
+    /// or a `StepHook`) had no way to ask "how far am I from a wall, and which direction is
+    /// it" *during* force computation — `Domain` previously exposed only `delta()` and the
+    /// post-integration `apply()`. Default `None` — optional, costs nothing for a domain
+    /// without a boundary, matching every other lazily-fixed gap's own precedent (G4/G6/G7,
+    /// D22b: fix exactly when a phase's own work needs it, here `murmur_maxent_social`'s
+    /// "boundary" wall-falloff channel, Phase 17). The returned distance is signed exactly like
+    /// each bounded `Domain`'s own `apply()` reasons about it (positive inside the boundary,
+    /// negative once already past it — `Margin`/`Sphere`/`SphereSoft` never clamp `pos` inside
+    /// this query, only `apply()` does that, and only for `Margin`/`Sphere`).
+    fn boundary_distance(&self, _pos: Vec3) -> Option<(f64, Vec3)> {
+        None
+    }
+
     fn name(&self) -> &'static str;
 }

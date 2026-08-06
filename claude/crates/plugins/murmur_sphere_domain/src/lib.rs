@@ -7,7 +7,7 @@
 //! push), and any outward-pointing component of its velocity is removed — the "inward velocity
 //! correction" design/02_plugins.md §5 names, distinct from a reflecting bounce.
 
-use murmur_core::{Domain, PluginParams, Registry, Vec3};
+use murmur_core::{Domain, PluginParams, Registry, Vec3, MIN_LEN};
 
 pub struct Sphere {
     radius: f64,
@@ -36,6 +36,22 @@ impl Domain for Sphere {
         if radial > 0.0 {
             *vel -= normal * radial;
         }
+    }
+
+    /// G5 (roadmap.md §12): distance to the sphere surface (positive inside, negative once
+    /// already past it — this query never clamps `pos`, only `apply()` does) and the inward
+    /// unit normal (toward the centre). At the exact centre, "inward" has no natural direction
+    /// (any direction is equally central) — an arbitrary fixed axis is returned rather than a
+    /// non-unit or undefined vector, keeping the contract (`murmur_conformance::domain`'s own
+    /// unit-length check) satisfiable at every input, not just the common case.
+    fn boundary_distance(&self, pos: Vec3) -> Option<(f64, Vec3)> {
+        let r = pos.len();
+        let normal = if r > MIN_LEN {
+            -(pos / r)
+        } else {
+            Vec3::new(1.0, 0.0, 0.0)
+        };
+        Some((self.radius - r, normal))
     }
 
     fn name(&self) -> &'static str {
@@ -113,6 +129,29 @@ mod tests {
         let mut vel = Vec3::new(-4.0, 0.0, 0.0); // already heading inward
         d.apply(&mut pos, &mut vel, 1.0);
         assert_eq!(vel.x, -4.0);
+    }
+
+    #[test]
+    fn boundary_distance_is_positive_inside_and_points_inward() {
+        let d = Sphere::new(10.0);
+        let (distance, normal) = d.boundary_distance(Vec3::new(6.0, 0.0, 0.0)).unwrap();
+        assert!((distance - 4.0).abs() < 1e-9, "got {}", distance);
+        assert_eq!(normal, Vec3::new(-1.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn boundary_distance_is_negative_once_outside_the_radius() {
+        let d = Sphere::new(10.0);
+        let (distance, _) = d.boundary_distance(Vec3::new(15.0, 0.0, 0.0)).unwrap();
+        assert!(distance < 0.0, "got {}", distance);
+    }
+
+    #[test]
+    fn boundary_distance_at_the_exact_centre_returns_a_valid_unit_normal() {
+        let d = Sphere::new(10.0);
+        let (distance, normal) = d.boundary_distance(Vec3::ZERO).unwrap();
+        assert!((distance - 10.0).abs() < 1e-9);
+        assert!((normal.len() - 1.0).abs() < 1e-9, "got {:?}", normal);
     }
 
     #[test]

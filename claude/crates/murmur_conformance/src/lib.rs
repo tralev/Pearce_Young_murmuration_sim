@@ -87,6 +87,24 @@ pub fn domain(d: &dyn Domain) {
         pos.is_finite() && vel.is_finite(),
         "Domain::apply must leave pos/vel finite"
     );
+
+    // G5: optional, but whatever it returns (Some or None) must be internally consistent —
+    // finite distance, finite and unit-length normal.
+    if let Some((distance, normal)) = d.boundary_distance(Vec3::new(1.0, 2.0, 3.0)) {
+        assert!(
+            distance.is_finite(),
+            "Domain::boundary_distance's distance must be finite when Some"
+        );
+        assert!(
+            normal.is_finite(),
+            "Domain::boundary_distance's normal must be finite when Some"
+        );
+        assert!(
+            (normal.len() - 1.0).abs() < 1e-9,
+            "Domain::boundary_distance's normal must be unit length, got len={}",
+            normal.len()
+        );
+    }
 }
 
 pub fn spatial_index(index: &mut dyn SpatialIndex, boids: &BoidColumns) {

@@ -68,6 +68,31 @@ impl Domain for Margin {
         self.apply_axis(&mut pos.z, &mut vel.z, dt);
     }
 
+    /// G5 (roadmap.md §12): the nearest of the cube's 6 faces — whichever axis has the smallest
+    /// remaining margin (`half_extent - |pos[axis]|`) — with an inward unit normal on that axis
+    /// alone (`f64::signum` is `±1.0` even at exactly `0.0`, never `0.0` itself, so this is
+    /// always genuinely unit length, never the zero vector).
+    fn boundary_distance(&self, pos: Vec3) -> Option<(f64, Vec3)> {
+        let margins = [
+            self.half_extent - pos.x.abs(),
+            self.half_extent - pos.y.abs(),
+            self.half_extent - pos.z.abs(),
+        ];
+        let axis = if margins[0] <= margins[1] && margins[0] <= margins[2] {
+            0
+        } else if margins[1] <= margins[2] {
+            1
+        } else {
+            2
+        };
+        let normal = match axis {
+            0 => Vec3::new(-pos.x.signum(), 0.0, 0.0),
+            1 => Vec3::new(0.0, -pos.y.signum(), 0.0),
+            _ => Vec3::new(0.0, 0.0, -pos.z.signum()),
+        };
+        Some((margins[axis], normal))
+    }
+
     fn name(&self) -> &'static str {
         "margin"
     }
@@ -163,6 +188,35 @@ mod tests {
         assert_eq!(pos.x, 50.0);
         assert_eq!(pos.y, 1.0, "y was well within bounds and must be untouched");
         assert_eq!(pos.z, -50.0);
+    }
+
+    #[test]
+    fn boundary_distance_finds_the_nearest_face_and_points_inward() {
+        let d = Margin::new(50.0, 10.0, 5.0);
+        // Well inside on y/z, close to the +x face (margin 5.0) and further from +y (margin 45).
+        let (distance, normal) = d.boundary_distance(Vec3::new(45.0, 0.0, 0.0)).unwrap();
+        assert!((distance - 5.0).abs() < 1e-9, "got {}", distance);
+        assert_eq!(
+            normal,
+            Vec3::new(-1.0, 0.0, 0.0),
+            "must point inward, away from +x"
+        );
+    }
+
+    #[test]
+    fn boundary_distance_is_negative_once_past_the_edge() {
+        let d = Margin::new(50.0, 10.0, 5.0);
+        let (distance, _) = d.boundary_distance(Vec3::new(60.0, 0.0, 0.0)).unwrap();
+        assert!(distance < 0.0, "got {}", distance);
+    }
+
+    #[test]
+    fn boundary_distance_at_the_exact_centre_returns_a_valid_unit_normal() {
+        // pos=(0,0,0): all three margins tie at half_extent -- must not produce a zero vector.
+        let d = Margin::new(50.0, 10.0, 5.0);
+        let (distance, normal) = d.boundary_distance(Vec3::ZERO).unwrap();
+        assert!((distance - 50.0).abs() < 1e-9);
+        assert!((normal.len() - 1.0).abs() < 1e-9, "got {:?}", normal);
     }
 
     #[test]

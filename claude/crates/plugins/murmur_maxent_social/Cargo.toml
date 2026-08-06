@@ -1,0 +1,20 @@
+[package]
+name = "murmur_maxent_social"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "MaxentSocial: 5-channel (alignment/repulsion/attraction/boundary/desire) generative FlockingMode after Cai et al. 2021's maximum-entropy statistical-mechanics framework (arXiv:2112.15560, roadmap.md Phase 17). Uses G5's Domain::boundary_distance() for the boundary channel."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }
+murmur_pearce = { path = "../murmur_pearce" }
+murmur_vicsek = { path = "../murmur_vicsek" }
+murmur_margin_domain = { path = "../murmur_margin_domain" }
+murmur_instant_response = { path = "../murmur_instant_response" }
+murmur_hash_grid = { path = "../murmur_hash_grid" }
+murmur_radius_gather = { path = "../murmur_radius_gather" }
+murmur_initializers = { path = "../murmur_initializers" }
+rayon = "1"

@@ -11,7 +11,7 @@
 //! stays large-but-finite even exactly at or beyond `radius` (`Domain::apply` is contractually
 //! required to leave `pos`/`vel` finite, design/01_core.md §3, `murmur_conformance::domain`).
 
-use murmur_core::{Domain, PluginParams, Registry, Vec3};
+use murmur_core::{Domain, PluginParams, Registry, Vec3, MIN_LEN};
 
 /// Floor on `gap` before it's used as a divisor — keeps the push finite instead of literally
 /// infinite right at (or beyond) `radius`.
@@ -46,6 +46,24 @@ impl Domain for SphereSoft {
         let gap = (self.radius - r).max(MIN_GAP);
         let accel = self.push_strength / gap;
         *vel -= normal * accel * dt;
+    }
+
+    /// G5 (roadmap.md §12): the same geometric boundary `Sphere` queries — distance to the
+    /// nominal `radius` surface (positive inside, negative once past it) and the inward unit
+    /// normal — even though `apply()` itself never hard-clamps here. The *query* is still
+    /// well-defined regardless of how (or whether) `apply()` enforces it; a `StepHook`/
+    /// `FlockingMode` asking "how close am I to the wall" wants the same honest answer under
+    /// either sphere variant. Same centre-of-domain fallback as `Sphere`: "inward" has no
+    /// natural direction at the exact centre, so an arbitrary fixed axis is returned instead of
+    /// a non-unit or undefined vector.
+    fn boundary_distance(&self, pos: Vec3) -> Option<(f64, Vec3)> {
+        let r = pos.len();
+        let normal = if r > MIN_LEN {
+            -(pos / r)
+        } else {
+            Vec3::new(1.0, 0.0, 0.0)
+        };
+        Some((self.radius - r, normal))
     }
 
     fn name(&self) -> &'static str {
@@ -137,6 +155,22 @@ mod tests {
             "must stay finite at the singularity gap=0, got {:?}",
             vel
         );
+    }
+
+    #[test]
+    fn boundary_distance_is_positive_inside_and_points_inward() {
+        let d = SphereSoft::new(10.0, 5.0);
+        let (distance, normal) = d.boundary_distance(Vec3::new(6.0, 0.0, 0.0)).unwrap();
+        assert!((distance - 4.0).abs() < 1e-9, "got {}", distance);
+        assert_eq!(normal, Vec3::new(-1.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn boundary_distance_at_the_exact_centre_returns_a_valid_unit_normal() {
+        let d = SphereSoft::new(10.0, 5.0);
+        let (distance, normal) = d.boundary_distance(Vec3::ZERO).unwrap();
+        assert!((distance - 10.0).abs() < 1e-9);
+        assert!((normal.len() - 1.0).abs() < 1e-9, "got {:?}", normal);
     }
 
     #[test]

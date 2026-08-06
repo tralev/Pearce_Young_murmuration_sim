@@ -63,6 +63,7 @@ fn build_registry() -> Registry {
     murmur_spatial::register(&mut reg);
     murmur_angle::register(&mut reg);
     murmur_influencer::register(&mut reg);
+    murmur_maxent_social::register(&mut reg);
     reg
 }
 
@@ -268,6 +269,16 @@ impl PySimulation {
         phase_x = 0.0,
         phase_y = std::f64::consts::FRAC_PI_2,
         phase_z = 0.0,
+        repulsion_weight = 1.5,
+        attraction_weight = 0.5,
+        boundary_weight = 1.0,
+        desire_weight = 0.0,
+        repulsion_radius = 2.0,
+        attraction_radius = 10.0,
+        boundary_decay = 5.0,
+        goal_x = 1.0,
+        goal_y = 0.0,
+        goal_z = 0.0,
         knn_k = 6,
         speed_factor = 1.0,
         awareness_radius = None,
@@ -369,6 +380,16 @@ impl PySimulation {
         phase_x: f64,
         phase_y: f64,
         phase_z: f64,
+        repulsion_weight: f64,
+        attraction_weight: f64,
+        boundary_weight: f64,
+        desire_weight: f64,
+        repulsion_radius: f64,
+        attraction_radius: f64,
+        boundary_decay: f64,
+        goal_x: f64,
+        goal_y: f64,
+        goal_z: f64,
         knn_k: u32,
         speed_factor: f64,
         awareness_radius: Option<f64>,
@@ -510,6 +531,16 @@ impl PySimulation {
             .with("phase_x", phase_x)
             .with("phase_y", phase_y)
             .with("phase_z", phase_z)
+            .with("repulsion_weight", repulsion_weight)
+            .with("attraction_weight", attraction_weight)
+            .with("boundary_weight", boundary_weight)
+            .with("desire_weight", desire_weight)
+            .with("repulsion_radius", repulsion_radius)
+            .with("attraction_radius", attraction_radius)
+            .with("boundary_decay", boundary_decay)
+            .with("goal_x", goal_x)
+            .with("goal_y", goal_y)
+            .with("goal_z", goal_z)
             .with("k", knn_k as f64)
             .with("speed_factor", speed_factor);
 
