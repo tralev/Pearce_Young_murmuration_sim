@@ -6,7 +6,7 @@ murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_dom
 murmur_ceiling_speed, murmur_none_speed, murmur_adaptive_index, murmur_hybrid_selection,
 murmur_spatial, murmur_angle, murmur_influencer, murmur_maxent_social, murmur_field,
 murmur_boid_state_machine, murmur_ecology, murmur_dynamic_vision_range,
-murmur_neighbor_adaptive_speed, murmur_speed_noise) were registered in murmur_core's own registry and had real Rust test
+murmur_neighbor_adaptive_speed, murmur_speed_noise, murmur_wander) were registered in murmur_core's own registry and had real Rust test
 suites, but were never added to
 murmur_py's registry — there was no way to even construct a Simulation using any of them from
 Python. This file exists so that gap can't silently reopen: each plugin gets a small, real
@@ -469,3 +469,23 @@ def test_speed_noise_step_hook_is_deterministic_and_lowers_mean_speed():
     quiet.run_batch(60, 3)
     assert np.all(np.isfinite(noisy.velocities()))
     assert mean_speed(noisy) < mean_speed(quiet) - 0.02
+
+
+def test_wander_step_hook_keeps_a_pearce_flock_bounded_around_its_own_moving_target():
+    sim = m.Simulation(
+        boid_count=150,
+        mode="pearce",
+        phi_p=0.50,
+        phi_a=0.20,
+        step_hooks=["wander"],
+        wander_pull_strength=2.0,
+        vision_radius=10.0,
+        init_radius=10.0,
+        cruise_speed=1.0,
+        dt=1.0,
+    )
+    sim.run_batch(200, 7)
+    positions = sim.positions()
+    assert np.all(np.isfinite(positions))
+    r_max = float(np.linalg.norm(positions, axis=1).max())
+    assert r_max < 200.0, f"expected a strong wander pull to keep R_max bounded, got {r_max}"

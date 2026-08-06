@@ -194,4 +194,7 @@ is done too — a smoothed, downward-only stochastic per-boid speed-cap wobble, 
 motivated fixing **G8**: `StepHook::post_steer` previously had no path to genuine, `base_seed`-tied
 randomness at all (every prior hook happened to be deterministic). Verified two ways: the same
 `base_seed` reproduces a bit-identical run, and a strong noise amplitude measurably lowers a real
-flock's mean speed. Obstacles (SDF/CSG avoidance), `wander`, and `ripple` are not built.
+flock's mean speed. `murmur_wander` is done too — a bounded attractor pull toward the flock's own
+live centroid (not a fixed point, unlike `murmur_influencer`/`murmur_field`), reusing `murmur_field`'s
+own 11-term Lissajous+envelope curve formula plus a closed-form analytic heading; fully
+deterministic, no G8 dependency. Obstacles (SDF/CSG avoidance) and `ripple` are not built.

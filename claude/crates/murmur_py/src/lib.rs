@@ -70,6 +70,7 @@ fn build_registry() -> Registry {
     murmur_dynamic_vision_range::register(&mut reg);
     murmur_neighbor_adaptive_speed::register(&mut reg);
     murmur_speed_noise::register(&mut reg);
+    murmur_wander::register(&mut reg);
     reg
 }
 
@@ -341,6 +342,18 @@ impl PySimulation {
         max_speed_factor = 1.0,
         noise_amplitude = 0.15,
         smoothing = 0.3,
+        wander_amplitude_x = 10.0,
+        wander_amplitude_y = 10.0,
+        wander_amplitude_z = 5.0,
+        wander_frequency_x = 0.05,
+        wander_frequency_y = 0.07,
+        wander_frequency_z = 0.03,
+        wander_phase_x = 0.0,
+        wander_phase_y = std::f64::consts::FRAC_PI_2,
+        wander_phase_z = 0.0,
+        wander_envelope_amplitude = 0.3,
+        wander_envelope_frequency = 0.01,
+        wander_pull_strength = 0.3,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -483,6 +496,18 @@ impl PySimulation {
         max_speed_factor: f64,
         noise_amplitude: f64,
         smoothing: f64,
+        wander_amplitude_x: f64,
+        wander_amplitude_y: f64,
+        wander_amplitude_z: f64,
+        wander_frequency_x: f64,
+        wander_frequency_y: f64,
+        wander_frequency_z: f64,
+        wander_phase_x: f64,
+        wander_phase_y: f64,
+        wander_phase_z: f64,
+        wander_envelope_amplitude: f64,
+        wander_envelope_frequency: f64,
+        wander_pull_strength: f64,
     ) -> PyResult<Self> {
         let core_params = CoreParams::builder()
             .cruise_speed(cruise_speed)
@@ -641,7 +666,19 @@ impl PySimulation {
             .with("min_speed_factor", min_speed_factor)
             .with("max_speed_factor", max_speed_factor)
             .with("noise_amplitude", noise_amplitude)
-            .with("smoothing", smoothing);
+            .with("smoothing", smoothing)
+            .with("wander_amplitude_x", wander_amplitude_x)
+            .with("wander_amplitude_y", wander_amplitude_y)
+            .with("wander_amplitude_z", wander_amplitude_z)
+            .with("wander_frequency_x", wander_frequency_x)
+            .with("wander_frequency_y", wander_frequency_y)
+            .with("wander_frequency_z", wander_frequency_z)
+            .with("wander_phase_x", wander_phase_x)
+            .with("wander_phase_y", wander_phase_y)
+            .with("wander_phase_z", wander_phase_z)
+            .with("wander_envelope_amplitude", wander_envelope_amplitude)
+            .with("wander_envelope_frequency", wander_envelope_frequency)
+            .with("wander_pull_strength", wander_pull_strength);
 
         let config = SimConfig {
             mode: mode.to_string(),

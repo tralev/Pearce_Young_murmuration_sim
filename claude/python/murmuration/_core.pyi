@@ -177,6 +177,18 @@ class Simulation:
         max_speed_factor: float = 1.0,
         noise_amplitude: float = 0.15,
         smoothing: float = 0.3,
+        wander_amplitude_x: float = 10.0,
+        wander_amplitude_y: float = 10.0,
+        wander_amplitude_z: float = 5.0,
+        wander_frequency_x: float = 0.05,
+        wander_frequency_y: float = 0.07,
+        wander_frequency_z: float = 0.03,
+        wander_phase_x: float = 0.0,
+        wander_phase_y: float = 1.5707963267948966,
+        wander_phase_z: float = 0.0,
+        wander_envelope_amplitude: float = 0.3,
+        wander_envelope_frequency: float = 0.01,
+        wander_pull_strength: float = 0.3,
     ) -> None: ...
     def step(self, dt: float, seed: int) -> None: ...
     def run_batch(self, steps: int, seed: int) -> None: ...
