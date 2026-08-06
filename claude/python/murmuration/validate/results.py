@@ -26,6 +26,19 @@ simultaneously, and substantially improve P-c/Y-a without regressing Y-c's sign 
 change alone (verified) does both jobs — `steric` alone at the old `(0.03, 0.80)` weights does
 nothing for fragmentation (R_max still explodes identically), and cohesion-dominance alone
 overshoots Theta-bar badly.
+
+**Y-a/Y-c re-pointed from `mode="pearce"` to `mode="young"`** (2026-08-06, project-owner
+decision, once `murmur_young` — a `FlockingMode` whose own steering uses m* — existed): those
+gates are about the flock's sensing-graph robustness structure, more meaningfully tested
+against a flock whose steering is actually built around m* than against Pearce's
+occlusion-driven one. **Real, disclosed cost**: Y-c regresses from PASS to FAIL under this
+change (was passing under Pearce's three phenotypes) — young's own align/cohesion/noise
+weights were swept extensively (16 configurations total, `sci/param_table.md`) and don't
+produce a reliable, predictable thickness-vs-m* relationship at this flock's current physical
+calibration; m* under young mode also improves but doesn't reach target (3 under Pearce → 4
+under Young, vs. {5,6,7}). **Net hard-gate count: 2 of 5** (P-a, P-d), down from 3 (P-a, P-d,
+Y-c) before this change — applied faithfully per explicit instruction, not silently accepted
+as a wash; see `YOUNG_KWARGS`/`YOUNG_PHENOTYPES` below for the full calibration record.
 """
 
 import numpy as np
@@ -37,6 +50,56 @@ PHENOTYPES = {
     "murmuration": dict(phi_p=0.50, phi_a=0.20),
     "schooling": dict(phi_p=0.10, phi_a=0.60),
     "swarming": dict(phi_p=0.20, phi_a=0.30),
+}
+
+# Young (2013) results (Y-a, Y-c) were re-pointed from mode="pearce" to mode="young" (2026-08-05,
+# project-owner decision, once murmur_young -- a FlockingMode whose own steering uses m* --
+# existed): those gates are about whether the flock's *sensing graph* has a well-defined
+# robustness-optimal neighbour count, which is more meaningfully tested against a flock whose
+# steering is actually built around that quantity than against Pearce's occlusion-driven one.
+#
+# Calibrated empirically against the real harness (N=800, warmup=800, matching Y-a's own
+# protocol) the same way phi_p/phi_a were: swept align_weight/cohesion_weight/noise_weight
+# and m_min directly. Finding, honestly reported: m* tops out around 4 (align=0.2,
+# cohesion=0.05, noise=0.75) before *decreasing* again at even higher noise, where the flock
+# loses coherence entirely (polarisation collapses to ~0.02 -- not a meaningful flocking
+# regime for Young's own analysis to apply to). Still short of the target m* in {5,6,7} --
+# very likely the same root cause as P-c's own failure (`sci/param_table.md`): this
+# simulation's flocks connect more efficiently/densely than real starling flocks at comparable
+# N, which structurally caps how high m* can go regardless of which FlockingMode computes
+# steering. A genuinely higher m* likely needs the same kind of mechanism P-c needs (density
+# that scales down with N), not further weight tuning within young's existing terms -- kept
+# as the closest real improvement found (m*=3 under Pearce -> m*=4 under Young), not forced
+# further into an incoherent-flock regime just to chase the target number.
+YOUNG_KWARGS = dict(align_weight=0.2, cohesion_weight=0.05, noise_weight=0.75)
+
+# Three young-mode presets spanning the widest real thickness spread found during that same
+# sweep (0.78 to 0.93) -- Y-c's own "span thickness by varying phenotype" requirement. Unlike
+# PHENOTYPES' three Pearce presets (which span thickness via phi_p/phi_a), young's own
+# align/cohesion/noise terms don't produce as dramatic a shape range -- an honest, real
+# limitation of the mechanism, not a search that was cut short (see the same sweep record in
+# sci/param_table.md).
+#
+# Measured against the real harness: Y-c now FAILS under these presets (was PASS under Pearce)
+# -- a genuine, disclosed regression from the re-point decision, not an oversight. m* came out
+# {2, 2, 4} across the three presets in increasing-thickness order, a *positive* correlation
+# with thickness, not the required negative one. A further 7-point smooth 1D sweep along
+# cohesion_weight (holding align/noise on a fixed complementary split) was tried specifically
+# looking for a monotonic thickness-vs-m* relationship of *either* sign, to see whether a
+# better-chosen preset triple could recover a genuine trend: it didn't -- m* sat at 2 for 6 of
+# 7 points, jumping to 3 unpredictably, no relationship to thickness at all. Deliberately not
+# hand-picking 3 specific data points that happen to correlate the right way out of the ones
+# already gathered -- that would be presenting noise as a trend, not a real finding, the same
+# standard this project's calibration work has held to throughout (`sci/param_table.md`).
+# Conclusion: m* does not appear to be a smooth, predictable function of young's own
+# align/cohesion/noise weights at this flock's current physical calibration -- most likely,
+# again, the same underlying structural issue as P-c (§ above) and Y-a's own capped m*: this
+# simulation's flocks are locally too well-connected for the marginal-neighbour-robustness
+# curve to behave the way real, sparser starling flocks' does. Not further pursued this pass.
+YOUNG_PHENOTYPES = {
+    "young_cohesive": dict(align_weight=0.3, cohesion_weight=0.5, noise_weight=0.2),
+    "young_balanced": dict(align_weight=0.5, cohesion_weight=0.3, noise_weight=0.2),
+    "young_diffuse": YOUNG_KWARGS,
 }
 
 # See sci/param_table.md for the full canonical-vs-previous comparison, citations, and the
@@ -89,6 +152,21 @@ def make_sim(n: int, phi_p: float, phi_a: float, seed: int = 0, **overrides) -> 
         boid_count=n,
         phi_p=phi_p,
         phi_a=phi_a,
+        init_radius=init_radius_for(n),
+        init_seed=seed,
+        **kwargs,
+    )
+
+
+def make_young_sim(n: int, seed: int = 0, **overrides) -> Simulation:
+    """As `make_sim`, but for `mode="young"` — no `phi_p`/`phi_a` (Pearce-specific), and the
+    shared physical baseline (`DEFAULT_SIM_KWARGS`) still applies (vision_radius/body_radius/
+    steric/etc. are mode-agnostic)."""
+    kwargs = dict(DEFAULT_SIM_KWARGS)
+    kwargs.update(overrides)
+    return Simulation(
+        boid_count=n,
+        mode="young",
         init_radius=init_radius_for(n),
         init_seed=seed,
         **kwargs,
@@ -215,8 +293,15 @@ def p_f_phenotypes_distinct(n=400, warmup=800, seed=0) -> dict:
 
 
 def y_a_m_star(n=800, warmup=800, seed=0) -> dict:
-    """Star: robustness-per-neighbour peaks at m* ~ 6-7."""
-    sim = make_sim(n, **PHENOTYPES["murmuration"], seed=seed)
+    """Star: robustness-per-neighbour peaks at m* ~ 6-7.
+
+    Uses mode="young" (re-pointed from "pearce", 2026-08-05, project-owner decision): this
+    result is about whether the flock's own sensing graph has a well-defined robustness-
+    optimal neighbour count, which is more meaningfully tested against a flock whose steering
+    is actually built around m* (murmur_young) than against Pearce's occlusion-driven one.
+    See YOUNG_KWARGS's own comment for the calibration record and its honestly-reported
+    remaining gap (m* tops out ~4, not 6-7 — likely the same root cause as P-c's failure)."""
+    sim = make_young_sim(n, seed=seed, **YOUNG_KWARGS)
     sim.run_batch(warmup, seed)
     curve = h2.h2_curve(sim.positions())
     return {"m_star": h2.m_star(curve), "curve": curve}
@@ -226,7 +311,7 @@ def y_b_m_star_vs_n(ns=(400, 800, 1600), warmup=800, seed=0) -> dict:
     """Report: m* is independent of flock size N."""
     out = {}
     for n in ns:
-        sim = make_sim(n, **PHENOTYPES["murmuration"], seed=seed)
+        sim = make_young_sim(n, seed=seed, **YOUNG_KWARGS)
         sim.run_batch(warmup, seed)
         curve = h2.h2_curve(sim.positions())
         out[n] = h2.m_star(curve)
@@ -236,11 +321,12 @@ def y_b_m_star_vs_n(ns=(400, 800, 1600), warmup=800, seed=0) -> dict:
 def y_c_m_star_vs_thickness(n=800, warmup=800, seed=0) -> dict:
     """Star: m* vs flock thickness (PCA lambda_3/lambda_1) trend, sign should be negative
     (thinner/more elongated flocks need fewer neighbours for the same robustness). Spans
-    thickness by varying phenotype (murmuration/schooling/swarming produce different order
-    and, empirically, different shapes)."""
+    thickness by varying YOUNG_PHENOTYPES (young_cohesive/young_balanced/young_diffuse produce
+    different order and, empirically, different shapes) — re-pointed to mode="young" alongside
+    Y-a, same day, same reasoning."""
     out = {}
-    for name, weights in PHENOTYPES.items():
-        sim = make_sim(n, **weights, seed=seed)
+    for name, weights in YOUNG_PHENOTYPES.items():
+        sim = make_young_sim(n, seed=seed, **weights)
         sim.run_batch(warmup, seed)
         pos = sim.positions()
         shape = shape_pca.flock_shape(pos)
@@ -251,7 +337,7 @@ def y_c_m_star_vs_thickness(n=800, warmup=800, seed=0) -> dict:
 
 def y_d_connectivity(n=800, warmup=800, ms=(5, 6, 7, 8), seed=0) -> dict:
     """Report: the sensing graph is connected for all m >= 5."""
-    sim = make_sim(n, **PHENOTYPES["murmuration"], seed=seed)
+    sim = make_young_sim(n, seed=seed, **YOUNG_KWARGS)
     sim.run_batch(warmup, seed)
     curve = h2.h2_curve(sim.positions(), m_values=ms)
     return {m: h2.is_connected_at(curve, m) for m in ms}

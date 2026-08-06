@@ -49,19 +49,34 @@ gate fails.
 
 ### Current acceptance status
 
-As of this build, running the harness gives (updated 2026-08-05, Phase 14's second calibration
-pass — see `sci/param_table.md` for the full mechanistic investigation and the empirical tests
-behind it):
+As of this build, running the harness gives (updated 2026-08-06 — Y-a/Y-c re-pointed to
+`mode="young"`; see `sci/param_table.md` for the full mechanistic investigation and the
+empirical tests behind every number here):
 
 | Gate | Result | Notes |
 |---|---|---|
 | ★ P-a (internal opacity) | **PASS** | Θ̄ ∈ [0.25, 0.35] at N ∈ {400, 800, 1600} |
 | ★ P-c (density scaling) | FAIL | exponent = 0.031 (target [−0.7, −0.3]) — now flat rather than positive, large improvement, not yet in range |
 | ★ P-d (no fragmentation) | **PASS** | `R_max` stays bounded (13–21) over 10⁴ steps at every tested `phi_p`/`phi_a` pair |
-| ★ Y-a (m* ≈ 6–7) | FAIL | m* = 3 (was 2) — improved, not yet in range |
-| ★ Y-c (m* vs thickness trend) | **PASS** | correct-sign trend, holding across all three phenotypes |
+| ★ Y-a (m* ≈ 6–7) | FAIL | m* = 4 under `mode="young"` (was 3 under `mode="pearce"`) — improved, not yet in range |
+| ★ Y-c (m* vs thickness trend) | **FAIL** (was PASS) | regressed under `mode="young"` — see below |
 
-**3 of 5 hard gates now pass** (P-a, P-d, Y-c), up from 2 (P-a, Y-c). The `"murmuration"`
+**2 of 5 hard gates now pass** (P-a, P-d), down from 3 (P-a, P-d, Y-c). Y-a/Y-c were
+re-pointed from `mode="pearce"` to `mode="young"` (project-owner decision, 2026-08-06) once
+`murmur_young` — a `FlockingMode` whose own steering genuinely uses m* — existed: those two
+gates are about the flock's sensing-graph robustness structure, which is more meaningfully
+tested against a flock actually steered by that quantity than against Pearce's
+occlusion-driven one. Applying this **has a real, disclosed cost**: Y-c regresses from PASS to
+FAIL. 16 configurations of young's `align_weight`/`cohesion_weight`/`noise_weight` were swept
+against the real harness looking for both (a) a higher m* and (b) three presets with the
+correct-sign thickness trend; m* did improve (3→4) but never reached target, and no
+combination produced a reliable, predictable thickness-vs-m* relationship — hand-picking 3
+specific already-gathered data points that happened to correlate the right way was
+deliberately rejected as presenting noise as a trend, not a real finding. Full record:
+`claude/python/murmuration/validate/results.py`'s own module docstring and
+`sci/param_table.md`.
+
+The `"murmuration"`
 phenotype's own `phi_p`/`phi_a` moved from `sim_new.md`'s literal `(0.03, 0.80)` to a
 cohesion-dominant `(0.50, 0.20)`, plus `steric_enabled=True` — not a guess, but the result of a
 real mechanistic investigation: at the paper's literal weights, the flock reliably **fragments**
@@ -77,11 +92,13 @@ weights (found to regress P-a there) and not yet re-tested in this new combinati
 `sci/param_table.md` for the full mechanistic diagnosis and per-change breakdown.
 
 P-c and Y-a failing is no longer the same "flock isn't self-bounded" story as before — P-d is
-now genuinely fixed, and both remaining gates improved substantially alongside it (P-c's
-exponent moved from ≈+1.02 to ≈0.03; Y-a's m* moved from 2 to 3, with the sensing graph now
-confirmed fully connected at every tested `m`). Both are report-confirmed as *closer*, not
-newly caused by anything this pass changed — closing them fully is separate, ongoing tuning
-work, not evidence the fragmentation fix was wrong.
+now genuinely fixed, and P-c improved substantially alongside it (exponent moved from ≈+1.02 to
+≈0.03) even though it doesn't yet pass. Y-a also improved under the mode change (m* 2→3 under
+Pearce, then 3→4 under Young) without reaching target. Y-c's regression is a different kind of
+finding — not "closer but not there," a genuine cost of a deliberate architectural decision
+(re-pointing to a mode whose own steering uses m*), disclosed rather than hidden. None of this
+is evidence the fragmentation fix was wrong — P-d holds robustly regardless of which mode Y-a/
+Y-c use, since that's a property of `phi_p`/`phi_a`, orthogonal to the Y-a/Y-c mode question.
 
 There's a second, related gap worth naming: the design's Phase 7 acceptance also calls for
 comparison against two fixture oracles (a tight-tolerance f64 numpy prototype, and a loose-
