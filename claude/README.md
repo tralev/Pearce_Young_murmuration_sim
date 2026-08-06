@@ -168,8 +168,10 @@ boundary channel; verified to reduce to Vicsek's own mean-heading rule when only
 active), and `murmur_field` (11-term Lissajous blob-anchor field mode — generalizes
 `murmur_influencer` to multiple spatially-distributed, phase-staggered anchors; verified a real
 flock genuinely splits across ≥2 anchors rather than collapsing onto one shared target).
-`analysis/force_inference.py` (pairs with `murmur_maxent_social`, not blocking) remains open.
-Phase 18 (remaining `StepHook` plugins) is in progress: `murmur_boid_state_machine` (per-boid
+`analysis/force_inference.py` (pairs with `murmur_maxent_social` — maximum-likelihood
+force-channel-weight/reaction-delay estimation from any trajectory, plus AIC-ranked model
+comparison, since raw log-likelihood always weakly favours a larger nested channel set) is now
+built too. Phase 18 (remaining `StepHook` plugins) is in progress: `murmur_boid_state_machine` (per-boid
 Normal/Isolated/Crowded/Threatened classification + a Crowded-only speed-cap multiplier) is
 done, fixing **G1** (`post_steer`'s `ctx.neighbors` was a hardcoded empty placeholder) and
 **G3** (no channel for a `StepHook` to influence `SpeedModel` enforcement) together — both
