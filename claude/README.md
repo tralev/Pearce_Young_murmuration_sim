@@ -148,9 +148,12 @@ deferred plugin catalogue) is partially built: `murmur_core::h2`'s Rust-native e
 `murmur_torus_domain`, `murmur_kdtree_index`, `murmur_knn_selection`, `murmur_fixed_speed`, the
 `Domain` catalogue's remaining occupants (`murmur_margin_domain`, `murmur_sphere_domain`,
 `murmur_sphere_soft_domain`), the `SpeedModel` catalogue's remaining occupants
-(`murmur_ceiling_speed`, `murmur_none_speed`), and the `Initializer` catalogue's remaining
-variants (`gaussian`, `grid`, `blob`, `tangential`, `spawn_cube`, added to the existing
-`murmur_initializers` crate) all exist, are tested, and are wired into `murmur_py`. Obstacles
-(SDF/CSG avoidance), ecology (predator/prey population dynamics beyond the FSM), and the
-remaining `SpatialIndex`/`NeighborSelection` plugins named in `roadmap.md` Phase 16
-(`adaptive_index`, `hybrid_selection`) are not built.
+(`murmur_ceiling_speed`, `murmur_none_speed`), the `Initializer` catalogue's remaining variants
+(`gaussian`, `grid`, `blob`, `tangential`, `spawn_cube`, added to the existing
+`murmur_initializers` crate), `murmur_adaptive_index` (wraps `HashGrid`+`kdtree_index`,
+auto-selects by N), and `murmur_hybrid_selection` (metric+topological `NeighborSelection` with
+an optional shared FOV cone — a deliberate, documented scope reduction from pymurmur's
+three-independent-cones description, since `NeighborSelection::select()` returns one shared
+list, not one per force channel) all exist, are tested, and are wired into `murmur_py`. **Phase
+16 is now fully done.** Obstacles (SDF/CSG avoidance) and ecology (predator/prey population
+dynamics beyond the FSM) — Phase 18 — are not built.

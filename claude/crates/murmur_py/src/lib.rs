@@ -58,6 +58,8 @@ fn build_registry() -> Registry {
     murmur_sphere_soft_domain::register(&mut reg);
     murmur_ceiling_speed::register(&mut reg);
     murmur_none_speed::register(&mut reg);
+    murmur_adaptive_index::register(&mut reg);
+    murmur_hybrid_selection::register(&mut reg);
     reg
 }
 
@@ -247,6 +249,9 @@ impl PySimulation {
         blob_spread = 10.0,
         blob_radius = 1.5,
         spawn_size = 1.0,
+        adaptive_crossover = 5000,
+        fov_enabled = false,
+        fov_half_angle = 1.2,
         knn_k = 6,
         speed_factor = 1.0,
         awareness_radius = None,
@@ -332,6 +337,9 @@ impl PySimulation {
         blob_spread: f64,
         blob_radius: f64,
         spawn_size: f64,
+        adaptive_crossover: u32,
+        fov_enabled: bool,
+        fov_half_angle: f64,
         knn_k: u32,
         speed_factor: f64,
         awareness_radius: Option<f64>,
@@ -457,6 +465,9 @@ impl PySimulation {
             .with("blob_spread", blob_spread)
             .with("blob_radius", blob_radius)
             .with("spawn_size", spawn_size)
+            .with("adaptive_crossover", adaptive_crossover as f64)
+            .with("fov_enabled", if fov_enabled { 1.0 } else { 0.0 })
+            .with("fov_half_angle", fov_half_angle)
             .with("k", knn_k as f64)
             .with("speed_factor", speed_factor);
 

@@ -1,0 +1,14 @@
+[package]
+name = "murmur_adaptive_index"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "AdaptiveIndex: SpatialIndex plugin wrapping HashGrid + KdTree, auto-selecting by N (roadmap.md Phase 16, design/02_plugins.md pymurmur plugins/spatial_index_strategy.py::auto)."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+murmur_hash_grid = { path = "../murmur_hash_grid" }
+murmur_kdtree_index = { path = "../murmur_kdtree_index" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }
