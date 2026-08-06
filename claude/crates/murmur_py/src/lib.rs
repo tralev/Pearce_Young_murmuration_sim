@@ -66,6 +66,7 @@ fn build_registry() -> Registry {
     murmur_maxent_social::register(&mut reg);
     murmur_field::register(&mut reg);
     murmur_boid_state_machine::register(&mut reg);
+    murmur_ecology::register(&mut reg);
     reg
 }
 
@@ -315,6 +316,18 @@ impl PySimulation {
         align_weight = 0.5,
         cohesion_weight = 0.3,
         noise_weight = 0.2,
+        hours_per_dt = 0.5,
+        dusk_hour = 18.0,
+        dusk_width = 1.0,
+        roosting_threshold = 0.5,
+        year_length_days = 365,
+        season_start_day = 274,
+        season_end_day = 90,
+        predator_rate = 0.296,
+        temperature_mean = 10.0,
+        temperature_amplitude = 8.0,
+        temperature_phase_day = 15.0,
+        coherence_strength = 0.3,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -435,6 +448,18 @@ impl PySimulation {
         align_weight: f64,
         cohesion_weight: f64,
         noise_weight: f64,
+        hours_per_dt: f64,
+        dusk_hour: f64,
+        dusk_width: f64,
+        roosting_threshold: f64,
+        year_length_days: u64,
+        season_start_day: u64,
+        season_end_day: u64,
+        predator_rate: f64,
+        temperature_mean: f64,
+        temperature_amplitude: f64,
+        temperature_phase_day: f64,
+        coherence_strength: f64,
     ) -> PyResult<Self> {
         let core_params = CoreParams::builder()
             .cruise_speed(cruise_speed)
@@ -571,7 +596,19 @@ impl PySimulation {
             .with("threat_speed_factor", threat_speed_factor)
             .with("crowded_speed_cap", crowded_speed_cap)
             .with("k", knn_k as f64)
-            .with("speed_factor", speed_factor);
+            .with("speed_factor", speed_factor)
+            .with("hours_per_dt", hours_per_dt)
+            .with("dusk_hour", dusk_hour)
+            .with("dusk_width", dusk_width)
+            .with("roosting_threshold", roosting_threshold)
+            .with("year_length_days", year_length_days as f64)
+            .with("season_start_day", season_start_day as f64)
+            .with("season_end_day", season_end_day as f64)
+            .with("predator_rate", predator_rate)
+            .with("temperature_mean", temperature_mean)
+            .with("temperature_amplitude", temperature_amplitude)
+            .with("temperature_phase_day", temperature_phase_day)
+            .with("coherence_strength", coherence_strength);
 
         let config = SimConfig {
             mode: mode.to_string(),

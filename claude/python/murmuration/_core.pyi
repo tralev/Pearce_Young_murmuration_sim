@@ -155,6 +155,18 @@ class Simulation:
         align_weight: float = 0.5,
         cohesion_weight: float = 0.3,
         noise_weight: float = 0.2,
+        hours_per_dt: float = 0.5,
+        dusk_hour: float = 18.0,
+        dusk_width: float = 1.0,
+        roosting_threshold: float = 0.5,
+        year_length_days: int = 365,
+        season_start_day: int = 274,
+        season_end_day: int = 90,
+        predator_rate: float = 0.296,
+        temperature_mean: float = 10.0,
+        temperature_amplitude: float = 8.0,
+        temperature_phase_day: float = 15.0,
+        coherence_strength: float = 0.3,
     ) -> None: ...
     def step(self, dt: float, seed: int) -> None: ...
     def run_batch(self, steps: int, seed: int) -> None: ...

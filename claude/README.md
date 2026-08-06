@@ -176,6 +176,10 @@ Normal/Isolated/Crowded/Threatened classification + a Crowded-only speed-cap mul
 done, fixing **G1** (`post_steer`'s `ctx.neighbors` was a hardcoded empty placeholder) and
 **G3** (no channel for a `StepHook` to influence `SpeedModel` enforcement) together — both
 verified end to end: a real densely-packed flock ends up measurably slower than a sparse one,
-not just correct in isolated unit calls. Obstacles (SDF/CSG avoidance), ecology (predator/prey
-population dynamics beyond the FSM), `wander`, `ripple`, `dynamic_vision_range`,
+not just correct in isolated unit calls. `murmur_ecology` (day/night cycle, logistic dusk roost,
+seasonal amplitude, deterministic predator presence, and a real coherence-gate pull toward the
+flock centroid) is also done — only its `predator_rate=0.296` default is empirically grounded
+(Goodenough et al. 2017's own reported figure, `sci/Birds of a feather flock together.pdf`, read
+directly); the dusk/seasonal curve shapes are disclosed as pymurmur's own smoothing choices, not
+claimed fits. Obstacles (SDF/CSG avoidance), `wander`, `ripple`, `dynamic_vision_range`,
 `neighbor_adaptive_speed`, and `speed_noise` are not built.

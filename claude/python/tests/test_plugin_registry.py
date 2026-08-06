@@ -5,7 +5,7 @@ murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed, murmur_predator_f
 murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_domain,
 murmur_ceiling_speed, murmur_none_speed, murmur_adaptive_index, murmur_hybrid_selection,
 murmur_spatial, murmur_angle, murmur_influencer, murmur_maxent_social, murmur_field,
-murmur_boid_state_machine) were registered in murmur_core's own registry and had real Rust test
+murmur_boid_state_machine, murmur_ecology) were registered in murmur_core's own registry and had real Rust test
 suites, but were never added to
 murmur_py's registry — there was no way to even construct a Simulation using any of them from
 Python. This file exists so that gap can't silently reopen: each plugin gets a small, real
@@ -367,3 +367,29 @@ def test_boid_state_machine_step_hook_caps_speed_of_a_densely_packed_flock():
     # A tightly-packed flock (init_radius=8 << vision_radius=15) should have at least some
     # boids capped below cruise_speed by the Crowded classification.
     assert speeds.min() < 1.0 - 1e-6
+
+
+def test_ecology_step_hook_coherence_gate_tightens_flock_spread_when_open():
+    def r_max(sim):
+        return float(np.linalg.norm(sim.positions(), axis=1).max())
+
+    common = dict(
+        boid_count=150,
+        mode="pearce",
+        phi_p=0.50,
+        phi_a=0.20,
+        step_hooks=["ecology"],
+        dusk_hour=18.0,
+        season_start_day=0,
+        season_end_day=364,
+        vision_radius=10.0,
+        init_radius=8.0,
+        cruise_speed=1.0,
+    )
+    gate_closed = m.Simulation(hours_per_dt=0.0, coherence_strength=2.0, **common)
+    gate_closed.run_batch(80, 4)
+    gate_open = m.Simulation(hours_per_dt=1.0, coherence_strength=2.0, **common)
+    gate_open.run_batch(80, 4)
+    assert np.all(np.isfinite(gate_closed.positions()))
+    assert np.all(np.isfinite(gate_open.positions()))
+    assert r_max(gate_open) < r_max(gate_closed)
