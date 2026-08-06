@@ -4,8 +4,8 @@ Phase 13/14/15/16 plugins (murmur_spin_wave, murmur_external_field, murmur_torus
 murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed, murmur_predator_fsm,
 murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_domain,
 murmur_ceiling_speed, murmur_none_speed, murmur_adaptive_index, murmur_hybrid_selection,
-murmur_spatial, murmur_angle, murmur_influencer, murmur_maxent_social) were registered in
-murmur_core's own registry and had real Rust test suites, but were never added to
+murmur_spatial, murmur_angle, murmur_influencer, murmur_maxent_social, murmur_field) were
+registered in murmur_core's own registry and had real Rust test suites, but were never added to
 murmur_py's registry — there was no way to even construct a Simulation using any of them from
 Python. This file exists so that gap can't silently reopen: each plugin gets a small, real
 construct-and-run check, one per trait socket it fills. The five new `murmur_initializers`
@@ -327,3 +327,17 @@ def test_maxent_social_mode_keeps_the_flock_bounded_under_a_margin_domain():
     assert np.all(np.isfinite(sim.velocities()))
     r_max = np.linalg.norm(sim.positions(), axis=1).max()
     assert r_max < 40.0, f"flock escaped the bounded domain, R_max={r_max}"
+
+
+def test_field_mode_runs_and_a_different_dt_changes_the_trajectory():
+    slow = m.Simulation(
+        boid_count=60, mode="field", dt=0.01, anchor_count=3, anchor_spread=20.0, init_radius=5.0
+    )
+    slow.run_batch(60, 0)
+    fast = m.Simulation(
+        boid_count=60, mode="field", dt=1.0, anchor_count=3, anchor_spread=20.0, init_radius=5.0
+    )
+    fast.run_batch(60, 0)
+    assert np.all(np.isfinite(slow.positions()))
+    assert np.all(np.isfinite(fast.positions()))
+    assert not np.allclose(slow.positions(), fast.positions())

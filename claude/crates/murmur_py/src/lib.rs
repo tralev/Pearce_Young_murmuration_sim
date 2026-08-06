@@ -64,6 +64,7 @@ fn build_registry() -> Registry {
     murmur_angle::register(&mut reg);
     murmur_influencer::register(&mut reg);
     murmur_maxent_social::register(&mut reg);
+    murmur_field::register(&mut reg);
     reg
 }
 
@@ -279,6 +280,11 @@ impl PySimulation {
         goal_x = 1.0,
         goal_y = 0.0,
         goal_z = 0.0,
+        envelope_amplitude = 0.3,
+        envelope_frequency = 0.01,
+        anchor_count = 3,
+        anchor_spread = 20.0,
+        anchor_weight = 1.0,
         knn_k = 6,
         speed_factor = 1.0,
         awareness_radius = None,
@@ -390,6 +396,11 @@ impl PySimulation {
         goal_x: f64,
         goal_y: f64,
         goal_z: f64,
+        envelope_amplitude: f64,
+        envelope_frequency: f64,
+        anchor_count: u32,
+        anchor_spread: f64,
+        anchor_weight: f64,
         knn_k: u32,
         speed_factor: f64,
         awareness_radius: Option<f64>,
@@ -541,6 +552,11 @@ impl PySimulation {
             .with("goal_x", goal_x)
             .with("goal_y", goal_y)
             .with("goal_z", goal_z)
+            .with("envelope_amplitude", envelope_amplitude)
+            .with("envelope_frequency", envelope_frequency)
+            .with("anchor_count", anchor_count as f64)
+            .with("anchor_spread", anchor_spread)
+            .with("anchor_weight", anchor_weight)
             .with("k", knn_k as f64)
             .with("speed_factor", speed_factor);
 

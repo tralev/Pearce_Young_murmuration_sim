@@ -155,16 +155,19 @@ auto-selects by N), and `murmur_hybrid_selection` (metric+topological `NeighborS
 an optional shared FOV cone — a deliberate, documented scope reduction from pymurmur's
 three-independent-cones description, since `NeighborSelection::select()` returns one shared
 list, not one per force channel) all exist, are tested, and are wired into `murmur_py`. **Phase
-16 is fully done.** Phase 17 (remaining `FlockingMode` plugins) is in progress: `murmur_spatial`
-(classic Reynolds separation/alignment/cohesion — the first real occupant of
+16 and 17 are both fully done.** Phase 17 (the remaining `FlockingMode` plugins) built
+`murmur_spatial` (classic Reynolds separation/alignment/cohesion — the first real occupant of
 `murmur_core::kernels`'s `SeparationKernel`/`AlignmentKernel`/`CohesionKernel` toolkit, which
 existed since Phase 1 with zero implementations), `murmur_angle` (turn-rate-limited heading —
 the first `FlockingMode` to use the plugin-owned per-boid side-column pattern, design/01_core.md
 §2), `murmur_influencer` (rank/distance-weighted attractor pursuing a moving Lissajous
-target — the first `FlockingMode` to need G4's real elapsed simulated time), and
+target — the first `FlockingMode` to need G4's real elapsed simulated time),
 `murmur_maxent_social` (5-channel generative model after Cai et al. 2021's maximum-entropy
 framework, arXiv:2112.15560 — fixed **G5**, `Domain::boundary_distance()`, to build its
 boundary channel; verified to reduce to Vicsek's own mean-heading rule when only alignment is
-active) are all done; only `murmur_field` is not. Obstacles (SDF/CSG avoidance)
-and ecology
+active), and `murmur_field` (11-term Lissajous blob-anchor field mode — generalizes
+`murmur_influencer` to multiple spatially-distributed, phase-staggered anchors; verified a real
+flock genuinely splits across ≥2 anchors rather than collapsing onto one shared target).
+`analysis/force_inference.py` (pairs with `murmur_maxent_social`, not blocking) remains open.
+Obstacles (SDF/CSG avoidance) and ecology
 (predator/prey population dynamics beyond the FSM) — Phase 18 — are not built.
