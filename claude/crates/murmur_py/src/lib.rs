@@ -61,6 +61,7 @@ fn build_registry() -> Registry {
     murmur_adaptive_index::register(&mut reg);
     murmur_hybrid_selection::register(&mut reg);
     murmur_spatial::register(&mut reg);
+    murmur_angle::register(&mut reg);
     reg
 }
 
@@ -256,6 +257,7 @@ impl PySimulation {
         separation_weight = 1.5,
         alignment_weight = 1.0,
         separation_radius = 2.0,
+        max_turn_rate = 1.0,
         knn_k = 6,
         speed_factor = 1.0,
         awareness_radius = None,
@@ -347,6 +349,7 @@ impl PySimulation {
         separation_weight: f64,
         alignment_weight: f64,
         separation_radius: f64,
+        max_turn_rate: f64,
         knn_k: u32,
         speed_factor: f64,
         awareness_radius: Option<f64>,
@@ -478,6 +481,7 @@ impl PySimulation {
             .with("separation_weight", separation_weight)
             .with("alignment_weight", alignment_weight)
             .with("separation_radius", separation_radius)
+            .with("max_turn_rate", max_turn_rate)
             .with("k", knn_k as f64)
             .with("speed_factor", speed_factor);
 

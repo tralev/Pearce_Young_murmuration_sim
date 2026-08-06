@@ -23,6 +23,7 @@ murmur_hash_grid = { path = "../plugins/murmur_hash_grid" }
 murmur_initializers = { path = "../plugins/murmur_initializers" }
 murmur_instant_response = { path = "../plugins/murmur_instant_response" }
 murmur_adaptive_index = { path = "../plugins/murmur_adaptive_index" }
+murmur_angle = { path = "../plugins/murmur_angle" }
 murmur_ceiling_speed = { path = "../plugins/murmur_ceiling_speed" }
 murmur_hybrid_selection = { path = "../plugins/murmur_hybrid_selection" }
 murmur_kdtree_index = { path = "../plugins/murmur_kdtree_index" }

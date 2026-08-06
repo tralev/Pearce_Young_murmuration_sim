@@ -155,9 +155,12 @@ auto-selects by N), and `murmur_hybrid_selection` (metric+topological `NeighborS
 an optional shared FOV cone — a deliberate, documented scope reduction from pymurmur's
 three-independent-cones description, since `NeighborSelection::select()` returns one shared
 list, not one per force channel) all exist, are tested, and are wired into `murmur_py`. **Phase
-16 is fully done.** Phase 17 (remaining `FlockingMode` plugins) is started: `murmur_spatial`
+16 is fully done.** Phase 17 (remaining `FlockingMode` plugins) is in progress: `murmur_spatial`
 (classic Reynolds separation/alignment/cohesion — the first real occupant of
 `murmur_core::kernels`'s `SeparationKernel`/`AlignmentKernel`/`CohesionKernel` toolkit, which
-existed since Phase 1 with zero implementations) is done; `murmur_field`, `murmur_influencer`,
-`murmur_angle`, and `murmur_maxent_social` are not. Obstacles (SDF/CSG avoidance) and ecology
+existed since Phase 1 with zero implementations) and `murmur_angle` (turn-rate-limited heading —
+the first `FlockingMode` to use the plugin-owned per-boid side-column pattern, design/01_core.md
+§2) are both done; `murmur_field` and `murmur_maxent_social` are not, and `murmur_influencer`
+(needs G4, already fixed elsewhere) hasn't been built yet either. Obstacles (SDF/CSG avoidance)
+and ecology
 (predator/prey population dynamics beyond the FSM) — Phase 18 — are not built.

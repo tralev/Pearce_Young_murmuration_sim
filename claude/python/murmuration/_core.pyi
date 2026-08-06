@@ -101,6 +101,7 @@ class Simulation:
         separation_weight: float = 1.5,
         alignment_weight: float = 1.0,
         separation_radius: float = 2.0,
+        max_turn_rate: float = 1.0,
         knn_k: int = 6,
         speed_factor: float = 1.0,
         awareness_radius: Optional[float] = None,
