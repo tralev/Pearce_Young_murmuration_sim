@@ -5,7 +5,8 @@ murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed, murmur_predator_f
 murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_domain,
 murmur_ceiling_speed, murmur_none_speed, murmur_adaptive_index, murmur_hybrid_selection,
 murmur_spatial, murmur_angle, murmur_influencer, murmur_maxent_social, murmur_field,
-murmur_boid_state_machine, murmur_ecology, murmur_dynamic_vision_range) were registered in murmur_core's own registry and had real Rust test
+murmur_boid_state_machine, murmur_ecology, murmur_dynamic_vision_range,
+murmur_neighbor_adaptive_speed) were registered in murmur_core's own registry and had real Rust test
 suites, but were never added to
 murmur_py's registry — there was no way to even construct a Simulation using any of them from
 Python. This file exists so that gap can't silently reopen: each plugin gets a small, real
@@ -413,3 +414,29 @@ def test_dynamic_vision_range_step_hook_shrinks_radius_for_a_densely_packed_floc
     after = sim.describe()["vision_radius"]
     assert np.isfinite(after) and after > 0.0
     assert after < initial
+
+
+def test_neighbor_adaptive_speed_step_hook_slows_a_densely_packed_flock():
+    def mean_speed(sim):
+        return float(np.linalg.norm(sim.velocities(), axis=1).mean())
+
+    common = dict(
+        boid_count=200,
+        mode="pearce",
+        phi_p=0.50,
+        phi_a=0.20,
+        step_hooks=["neighbor_adaptive_speed"],
+        vision_radius=15.0,
+        low_count=1.0,
+        high_count=10.0,
+        min_speed_factor=0.4,
+        max_speed_factor=1.0,
+        cruise_speed=1.0,
+    )
+    tight = m.Simulation(init_radius=8.0, **common)
+    tight.run_batch(60, 3)
+    loose = m.Simulation(init_radius=80.0, **common)
+    loose.run_batch(60, 3)
+    assert np.all(np.isfinite(tight.velocities()))
+    assert np.all(np.isfinite(loose.velocities()))
+    assert mean_speed(tight) < mean_speed(loose) - 0.05

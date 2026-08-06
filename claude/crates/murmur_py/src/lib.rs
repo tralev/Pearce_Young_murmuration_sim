@@ -68,6 +68,7 @@ fn build_registry() -> Registry {
     murmur_boid_state_machine::register(&mut reg);
     murmur_ecology::register(&mut reg);
     murmur_dynamic_vision_range::register(&mut reg);
+    murmur_neighbor_adaptive_speed::register(&mut reg);
     reg
 }
 
@@ -333,6 +334,10 @@ impl PySimulation {
         adapt_rate = 0.1,
         min_multiplier = 0.25,
         max_multiplier = 4.0,
+        low_count = 2.0,
+        high_count = 12.0,
+        min_speed_factor = 0.5,
+        max_speed_factor = 1.0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -469,6 +474,10 @@ impl PySimulation {
         adapt_rate: f64,
         min_multiplier: f64,
         max_multiplier: f64,
+        low_count: f64,
+        high_count: f64,
+        min_speed_factor: f64,
+        max_speed_factor: f64,
     ) -> PyResult<Self> {
         let core_params = CoreParams::builder()
             .cruise_speed(cruise_speed)
@@ -621,7 +630,11 @@ impl PySimulation {
             .with("target_neighbor_count", target_neighbor_count)
             .with("adapt_rate", adapt_rate)
             .with("min_multiplier", min_multiplier)
-            .with("max_multiplier", max_multiplier);
+            .with("max_multiplier", max_multiplier)
+            .with("low_count", low_count)
+            .with("high_count", high_count)
+            .with("min_speed_factor", min_speed_factor)
+            .with("max_speed_factor", max_speed_factor);
 
         let config = SimConfig {
             mode: mode.to_string(),

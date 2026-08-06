@@ -186,5 +186,8 @@ loop on average neighbour count, target defaulting to `6.5` — the midpoint of 
 Y-a hard-gate figure, `m* ≈ 6–7`, Young et al. 2013) is done too — the first plugin to actually
 mutate `SimView::core_params` rather than only read it, verified end to end: a real densely-
 packed flock's own `vision_radius` measurably shrinks, and a real sparse flock's measurably
-grows, over a real `Simulation` run. Obstacles (SDF/CSG avoidance), `wander`, `ripple`,
-`neighbor_adaptive_speed`, and `speed_noise` are not built.
+grows, over a real `Simulation` run. `murmur_neighbor_adaptive_speed` is also done — the same
+G1/G3-powered `post_steer` + `speed_cap_multiplier` shape `murmur_boid_state_machine`
+established, but a continuous linear speed-cap interpolation on local neighbour count instead of
+a discrete state cutoff, verified with the same tight-vs-loose mean-speed proof. Obstacles
+(SDF/CSG avoidance), `wander`, `ripple`, and `speed_noise` are not built.

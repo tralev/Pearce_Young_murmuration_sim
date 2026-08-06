@@ -1,0 +1,19 @@
+[package]
+name = "murmur_neighbor_adaptive_speed"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Continuous per-boid speed-cap StepHook driven by local neighbour count (roadmap.md Phase 18, design/02_plugins.md pymurmur physics/extensions/neighbor_adaptive_speed.py). Identical shape to murmur_boid_state_machine's own G1/G3-powered post_steer + speed_cap_multiplier pattern, but a continuous linear interpolation instead of a discrete Crowded/Normal/Isolated cutoff."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }
+murmur_pearce = { path = "../murmur_pearce" }
+murmur_instant_response = { path = "../murmur_instant_response" }
+murmur_open_domain = { path = "../murmur_open_domain" }
+murmur_hash_grid = { path = "../murmur_hash_grid" }
+murmur_radius_gather = { path = "../murmur_radius_gather" }
+murmur_initializers = { path = "../murmur_initializers" }
+rayon = "1"

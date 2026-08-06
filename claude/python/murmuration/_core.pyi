@@ -171,6 +171,10 @@ class Simulation:
         adapt_rate: float = 0.1,
         min_multiplier: float = 0.25,
         max_multiplier: float = 4.0,
+        low_count: float = 2.0,
+        high_count: float = 12.0,
+        min_speed_factor: float = 0.5,
+        max_speed_factor: float = 1.0,
     ) -> None: ...
     def step(self, dt: float, seed: int) -> None: ...
     def run_batch(self, steps: int, seed: int) -> None: ...
