@@ -24,7 +24,10 @@ murmur_initializers = { path = "../plugins/murmur_initializers" }
 murmur_instant_response = { path = "../plugins/murmur_instant_response" }
 murmur_kdtree_index = { path = "../plugins/murmur_kdtree_index" }
 murmur_knn_selection = { path = "../plugins/murmur_knn_selection" }
+murmur_margin_domain = { path = "../plugins/murmur_margin_domain" }
 murmur_open_domain = { path = "../plugins/murmur_open_domain" }
+murmur_sphere_domain = { path = "../plugins/murmur_sphere_domain" }
+murmur_sphere_soft_domain = { path = "../plugins/murmur_sphere_soft_domain" }
 murmur_pearce = { path = "../plugins/murmur_pearce" }
 murmur_predator = { path = "../plugins/murmur_predator" }
 murmur_predator_fsm = { path = "../plugins/murmur_predator_fsm" }

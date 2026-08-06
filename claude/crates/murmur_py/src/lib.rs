@@ -53,6 +53,9 @@ fn build_registry() -> Registry {
     murmur_fixed_speed::register(&mut reg);
     murmur_predator_fsm::register(&mut reg);
     murmur_young::register(&mut reg);
+    murmur_margin_domain::register(&mut reg);
+    murmur_sphere_domain::register(&mut reg);
+    murmur_sphere_soft_domain::register(&mut reg);
     reg
 }
 
@@ -232,6 +235,10 @@ impl PySimulation {
         field_z = 0.0,
         field_strength = 0.1,
         half_extent = 50.0,
+        margin_width = 10.0,
+        margin_strength = 5.0,
+        sphere_radius = 50.0,
+        sphere_soft_push_strength = 5.0,
         knn_k = 6,
         speed_factor = 1.0,
         awareness_radius = None,
@@ -307,6 +314,10 @@ impl PySimulation {
         field_z: f64,
         field_strength: f64,
         half_extent: f64,
+        margin_width: f64,
+        margin_strength: f64,
+        sphere_radius: f64,
+        sphere_soft_push_strength: f64,
         knn_k: u32,
         speed_factor: f64,
         awareness_radius: Option<f64>,
@@ -422,6 +433,10 @@ impl PySimulation {
             .with("field_z", field_z)
             .with("field_strength", field_strength)
             .with("half_extent", half_extent)
+            .with("margin_width", margin_width)
+            .with("margin_strength", margin_strength)
+            .with("sphere_radius", sphere_radius)
+            .with("sphere_soft_push_strength", sphere_soft_push_strength)
             .with("k", knn_k as f64)
             .with("speed_factor", speed_factor);
 

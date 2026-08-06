@@ -1,0 +1,12 @@
+[package]
+name = "murmur_sphere_soft_domain"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "SphereSoftBoundary: asymptotic 1/gap inward-push Domain plugin, no hard clamp (roadmap.md Phase 16, design/02_plugins.md pymurmur plugins/boundary/strategies.py::SphereSoftBoundary — does not exist in droidmur, pymurmur is the sole source)."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }

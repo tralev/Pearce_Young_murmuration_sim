@@ -1,11 +1,12 @@
 """Smoke tests proving every plugin registered in murmur_py's build_registry() is actually
 selectable and runnable from Python — not just built and tested in Rust. Several Track C
-Phase 13/14/15 plugins (murmur_spin_wave, murmur_external_field, murmur_torus_domain,
+Phase 13/14/15/16 plugins (murmur_spin_wave, murmur_external_field, murmur_torus_domain,
 murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed, murmur_predator_fsm,
-murmur_young) were registered in murmur_core's own registry and had real Rust test suites, but
-were never added to murmur_py's registry — there was no way to even construct a Simulation
-using any of them from Python. This file exists so that gap can't silently reopen: each plugin
-gets a small, real construct-and-run check, one per trait socket it fills.
+murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_domain) were
+registered in murmur_core's own registry and had real Rust test suites, but were never added to
+murmur_py's registry — there was no way to even construct a Simulation using any of them from
+Python. This file exists so that gap can't silently reopen: each plugin gets a small, real
+construct-and-run check, one per trait socket it fills.
 """
 
 import numpy as np
@@ -109,3 +110,48 @@ def test_young_mode_runs_and_produces_finite_state():
     sim.run_batch(50, 0)
     assert np.all(np.isfinite(sim.velocities()))
     assert np.all(np.isfinite(sim.positions()))
+
+
+def test_margin_domain_keeps_positions_within_half_extent():
+    sim = m.Simulation(
+        boid_count=60,
+        domain="margin",
+        half_extent=20.0,
+        margin_width=5.0,
+        margin_strength=8.0,
+        init_radius=15.0,
+    )
+    for _ in range(50):
+        sim.run_batch(5, 0)
+    pos = sim.positions()
+    assert np.all(np.isfinite(pos))
+    assert np.all(np.abs(pos) <= 20.0 + 1e-6)
+
+
+def test_sphere_domain_keeps_positions_within_the_radius():
+    sim = m.Simulation(
+        boid_count=60,
+        domain="sphere",
+        sphere_radius=20.0,
+        init_radius=15.0,
+    )
+    for _ in range(50):
+        sim.run_batch(5, 0)
+    pos = sim.positions()
+    assert np.all(np.isfinite(pos))
+    assert np.all(np.linalg.norm(pos, axis=1) <= 20.0 + 1e-6)
+
+
+def test_sphere_soft_domain_runs_and_stays_finite_without_a_hard_clamp():
+    sim = m.Simulation(
+        boid_count=60,
+        domain="sphere_soft",
+        sphere_radius=20.0,
+        sphere_soft_push_strength=8.0,
+        init_radius=15.0,
+    )
+    for _ in range(50):
+        sim.run_batch(5, 0)
+    pos = sim.positions()
+    assert np.all(np.isfinite(pos))
+    assert np.all(np.isfinite(sim.velocities()))
