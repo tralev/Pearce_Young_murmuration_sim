@@ -147,9 +147,10 @@ deferred plugin catalogue) is partially built: `murmur_core::h2`'s Rust-native e
 `murmur_young`, `murmur_predator_fsm`, `murmur_spin_wave`, `murmur_external_field`,
 `murmur_torus_domain`, `murmur_kdtree_index`, `murmur_knn_selection`, `murmur_fixed_speed`, the
 `Domain` catalogue's remaining occupants (`murmur_margin_domain`, `murmur_sphere_domain`,
-`murmur_sphere_soft_domain`), and the `SpeedModel` catalogue's remaining occupants
-(`murmur_ceiling_speed`, `murmur_none_speed`) all exist, are tested, and are wired into
-`murmur_py`. Obstacles (SDF/CSG avoidance), ecology (predator/prey population dynamics beyond
-the FSM), and the remaining `SpatialIndex`/`NeighborSelection`/`Initializer` plugins named in
-`roadmap.md` Phase 16 (`adaptive_index`, `hybrid_selection`, and pymurmur's remaining
-`Initializer` variants) are not built.
+`murmur_sphere_soft_domain`), the `SpeedModel` catalogue's remaining occupants
+(`murmur_ceiling_speed`, `murmur_none_speed`), and the `Initializer` catalogue's remaining
+variants (`gaussian`, `grid`, `blob`, `tangential`, `spawn_cube`, added to the existing
+`murmur_initializers` crate) all exist, are tested, and are wired into `murmur_py`. Obstacles
+(SDF/CSG avoidance), ecology (predator/prey population dynamics beyond the FSM), and the
+remaining `SpatialIndex`/`NeighborSelection` plugins named in `roadmap.md` Phase 16
+(`adaptive_index`, `hybrid_selection`) are not built.

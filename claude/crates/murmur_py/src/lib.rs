@@ -241,6 +241,12 @@ impl PySimulation {
         margin_strength = 5.0,
         sphere_radius = 50.0,
         sphere_soft_push_strength = 5.0,
+        std_dev = 1.0,
+        grid_spacing = 2.0,
+        blob_count = 4,
+        blob_spread = 10.0,
+        blob_radius = 1.5,
+        spawn_size = 1.0,
         knn_k = 6,
         speed_factor = 1.0,
         awareness_radius = None,
@@ -320,6 +326,12 @@ impl PySimulation {
         margin_strength: f64,
         sphere_radius: f64,
         sphere_soft_push_strength: f64,
+        std_dev: f64,
+        grid_spacing: f64,
+        blob_count: u32,
+        blob_spread: f64,
+        blob_radius: f64,
+        spawn_size: f64,
         knn_k: u32,
         speed_factor: f64,
         awareness_radius: Option<f64>,
@@ -439,6 +451,12 @@ impl PySimulation {
             .with("margin_strength", margin_strength)
             .with("sphere_radius", sphere_radius)
             .with("sphere_soft_push_strength", sphere_soft_push_strength)
+            .with("std_dev", std_dev)
+            .with("grid_spacing", grid_spacing)
+            .with("blob_count", blob_count as f64)
+            .with("blob_spread", blob_spread)
+            .with("blob_radius", blob_radius)
+            .with("spawn_size", spawn_size)
             .with("k", knn_k as f64)
             .with("speed_factor", speed_factor);
 

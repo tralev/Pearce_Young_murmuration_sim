@@ -7,7 +7,10 @@ murmur_ceiling_speed, murmur_none_speed) were registered in murmur_core's own re
 real Rust test suites, but were never added to murmur_py's registry — there was no way to even
 construct a Simulation using any of them from Python. This file exists so that gap can't
 silently reopen: each plugin gets a small, real construct-and-run check, one per trait socket it
-fills.
+fills. The five new `murmur_initializers` variants (gaussian/grid/blob/tangential/spawn_cube)
+were added directly to an already-registered plugin crate, so they don't have this exact gap —
+but get the same treatment here anyway, for the same reason: proven reachable from Python, not
+just built and tested in Rust.
 """
 
 import numpy as np
@@ -179,4 +182,50 @@ def test_none_speed_runs_with_no_enforcement_and_stays_finite():
     )
     sim.run_batch(30, 0)
     assert np.all(np.isfinite(sim.velocities()))
+    assert np.all(np.isfinite(sim.positions()))
+
+
+def test_gaussian_initializer_produces_finite_state():
+    sim = m.Simulation(boid_count=60, init="gaussian", std_dev=5.0)
+    sim.run_batch(20, 0)
+    assert np.all(np.isfinite(sim.positions()))
+    assert np.all(np.isfinite(sim.velocities()))
+
+
+def test_grid_initializer_places_boids_on_a_lattice_at_step_zero():
+    sim = m.Simulation(boid_count=27, init="grid", grid_spacing=2.0)
+    pos = sim.positions()
+    coords = np.round(pos / 2.0)
+    assert np.all(np.abs(pos / 2.0 - coords) < 1e-6)
+    sim.run_batch(10, 0)
+    assert np.all(np.isfinite(sim.positions()))
+
+
+def test_blob_initializer_runs_and_produces_finite_state():
+    sim = m.Simulation(
+        boid_count=100,
+        init="blob",
+        blob_count=4,
+        blob_spread=15.0,
+        blob_radius=1.0,
+    )
+    sim.run_batch(20, 0)
+    assert np.all(np.isfinite(sim.positions()))
+    assert np.all(np.isfinite(sim.velocities()))
+
+
+def test_tangential_initializer_starts_with_purely_tangential_velocity():
+    sim = m.Simulation(boid_count=60, init="tangential", init_radius=5.0)
+    pos = sim.positions()
+    vel = sim.velocities()
+    radial = pos / np.linalg.norm(pos, axis=1, keepdims=True)
+    radial_component = np.sum(radial * vel, axis=1)
+    assert np.all(np.abs(radial_component) < 1e-6)
+
+
+def test_spawn_cube_initializer_produces_finite_state():
+    sim = m.Simulation(boid_count=60, init="spawn_cube", spawn_size=4.0)
+    pos = sim.positions()
+    assert np.all(np.abs(pos) <= 4.0 + 1e-6)
+    sim.run_batch(20, 0)
     assert np.all(np.isfinite(sim.positions()))
