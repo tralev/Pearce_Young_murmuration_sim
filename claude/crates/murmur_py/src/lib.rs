@@ -62,6 +62,7 @@ fn build_registry() -> Registry {
     murmur_hybrid_selection::register(&mut reg);
     murmur_spatial::register(&mut reg);
     murmur_angle::register(&mut reg);
+    murmur_influencer::register(&mut reg);
     reg
 }
 
@@ -258,6 +259,15 @@ impl PySimulation {
         alignment_weight = 1.0,
         separation_radius = 2.0,
         max_turn_rate = 1.0,
+        amplitude_x = 10.0,
+        amplitude_y = 10.0,
+        amplitude_z = 10.0,
+        frequency_x = 0.05,
+        frequency_y = 0.07,
+        frequency_z = 0.03,
+        phase_x = 0.0,
+        phase_y = std::f64::consts::FRAC_PI_2,
+        phase_z = 0.0,
         knn_k = 6,
         speed_factor = 1.0,
         awareness_radius = None,
@@ -350,6 +360,15 @@ impl PySimulation {
         alignment_weight: f64,
         separation_radius: f64,
         max_turn_rate: f64,
+        amplitude_x: f64,
+        amplitude_y: f64,
+        amplitude_z: f64,
+        frequency_x: f64,
+        frequency_y: f64,
+        frequency_z: f64,
+        phase_x: f64,
+        phase_y: f64,
+        phase_z: f64,
         knn_k: u32,
         speed_factor: f64,
         awareness_radius: Option<f64>,
@@ -482,6 +501,15 @@ impl PySimulation {
             .with("alignment_weight", alignment_weight)
             .with("separation_radius", separation_radius)
             .with("max_turn_rate", max_turn_rate)
+            .with("amplitude_x", amplitude_x)
+            .with("amplitude_y", amplitude_y)
+            .with("amplitude_z", amplitude_z)
+            .with("frequency_x", frequency_x)
+            .with("frequency_y", frequency_y)
+            .with("frequency_z", frequency_z)
+            .with("phase_x", phase_x)
+            .with("phase_y", phase_y)
+            .with("phase_z", phase_z)
             .with("k", knn_k as f64)
             .with("speed_factor", speed_factor);
 

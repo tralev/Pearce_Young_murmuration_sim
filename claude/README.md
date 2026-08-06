@@ -158,9 +158,10 @@ list, not one per force channel) all exist, are tested, and are wired into `murm
 16 is fully done.** Phase 17 (remaining `FlockingMode` plugins) is in progress: `murmur_spatial`
 (classic Reynolds separation/alignment/cohesion — the first real occupant of
 `murmur_core::kernels`'s `SeparationKernel`/`AlignmentKernel`/`CohesionKernel` toolkit, which
-existed since Phase 1 with zero implementations) and `murmur_angle` (turn-rate-limited heading —
+existed since Phase 1 with zero implementations), `murmur_angle` (turn-rate-limited heading —
 the first `FlockingMode` to use the plugin-owned per-boid side-column pattern, design/01_core.md
-§2) are both done; `murmur_field` and `murmur_maxent_social` are not, and `murmur_influencer`
-(needs G4, already fixed elsewhere) hasn't been built yet either. Obstacles (SDF/CSG avoidance)
+§2), and `murmur_influencer` (rank/distance-weighted attractor pursuing a moving Lissajous
+target — the first `FlockingMode` to need G4's real elapsed simulated time) are all done;
+`murmur_field` and `murmur_maxent_social` (needs G5) are not. Obstacles (SDF/CSG avoidance)
 and ecology
 (predator/prey population dynamics beyond the FSM) — Phase 18 — are not built.
