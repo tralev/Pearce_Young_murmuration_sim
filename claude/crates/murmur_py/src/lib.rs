@@ -69,6 +69,7 @@ fn build_registry() -> Registry {
     murmur_ecology::register(&mut reg);
     murmur_dynamic_vision_range::register(&mut reg);
     murmur_neighbor_adaptive_speed::register(&mut reg);
+    murmur_speed_noise::register(&mut reg);
     reg
 }
 
@@ -338,6 +339,8 @@ impl PySimulation {
         high_count = 12.0,
         min_speed_factor = 0.5,
         max_speed_factor = 1.0,
+        noise_amplitude = 0.15,
+        smoothing = 0.3,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -478,6 +481,8 @@ impl PySimulation {
         high_count: f64,
         min_speed_factor: f64,
         max_speed_factor: f64,
+        noise_amplitude: f64,
+        smoothing: f64,
     ) -> PyResult<Self> {
         let core_params = CoreParams::builder()
             .cruise_speed(cruise_speed)
@@ -634,7 +639,9 @@ impl PySimulation {
             .with("low_count", low_count)
             .with("high_count", high_count)
             .with("min_speed_factor", min_speed_factor)
-            .with("max_speed_factor", max_speed_factor);
+            .with("max_speed_factor", max_speed_factor)
+            .with("noise_amplitude", noise_amplitude)
+            .with("smoothing", smoothing);
 
         let config = SimConfig {
             mode: mode.to_string(),

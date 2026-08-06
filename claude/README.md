@@ -189,5 +189,9 @@ packed flock's own `vision_radius` measurably shrinks, and a real sparse flock's
 grows, over a real `Simulation` run. `murmur_neighbor_adaptive_speed` is also done — the same
 G1/G3-powered `post_steer` + `speed_cap_multiplier` shape `murmur_boid_state_machine`
 established, but a continuous linear speed-cap interpolation on local neighbour count instead of
-a discrete state cutoff, verified with the same tight-vs-loose mean-speed proof. Obstacles
-(SDF/CSG avoidance), `wander`, `ripple`, and `speed_noise` are not built.
+a discrete state cutoff, verified with the same tight-vs-loose mean-speed proof. `murmur_speed_noise`
+is done too — a smoothed, downward-only stochastic per-boid speed-cap wobble, and the plugin that
+motivated fixing **G8**: `StepHook::post_steer` previously had no path to genuine, `base_seed`-tied
+randomness at all (every prior hook happened to be deterministic). Verified two ways: the same
+`base_seed` reproduces a bit-identical run, and a strong noise amplitude measurably lowers a real
+flock's mean speed. Obstacles (SDF/CSG avoidance), `wander`, and `ripple` are not built.

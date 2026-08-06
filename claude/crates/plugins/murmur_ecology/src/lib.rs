@@ -328,7 +328,7 @@ impl StepHook for Ecology {
         *self.state.get_mut().unwrap() = (env, centroid);
     }
 
-    fn post_steer(&self, ctx: BoidCtx<'_>, acc: &mut Vec3) {
+    fn post_steer(&self, ctx: BoidCtx<'_>, acc: &mut Vec3, _rng: &mut murmur_core::Rng) {
         let (env, centroid) = *self.state.lock().unwrap();
         if env.coherence_factor <= 0.0 || self.params.coherence_strength <= 0.0 {
             return;
@@ -561,7 +561,7 @@ mod tests {
             step_count: 0,
         };
         let mut acc = Vec3::ZERO;
-        hook.post_steer(ctx, &mut acc);
+        hook.post_steer(ctx, &mut acc, &mut murmur_core::rng::for_boid(1, 2, 3));
         assert!(
             acc.x > 0.0,
             "must pull toward the centroid (at x=0), got {:?}",
@@ -605,7 +605,7 @@ mod tests {
             step_count: 0,
         };
         let mut acc = Vec3::ZERO;
-        hook.post_steer(ctx, &mut acc);
+        hook.post_steer(ctx, &mut acc, &mut murmur_core::rng::for_boid(1, 2, 3));
         assert_eq!(acc, Vec3::ZERO);
     }
 

@@ -5,6 +5,7 @@ use crate::boids::BoidColumns;
 use crate::math::Vec3;
 use crate::modes::BoidCtx;
 use crate::params::CoreParams;
+use crate::rng::Rng;
 
 /// View into simulation-level state a `StepHook`'s `pre_step` may read or adjust ahead of a
 /// step: the (not-yet-mutated-this-step) boid columns — read-only, for a hook that needs
@@ -22,7 +23,15 @@ pub trait StepHook: Send + Sync {
     /// An additive force contribution, applied after the active `SteeringModifier`. A hook
     /// that fully owns a species' behaviour (e.g. predator–prey's predator motion) may instead
     /// overwrite `*acc` outright for that species — see `murmur_predator` for the precedent.
-    fn post_steer(&self, _ctx: BoidCtx<'_>, _acc: &mut Vec3) {}
+    ///
+    /// `rng` fixes **G8** (roadmap.md §12): before this, no `StepHook` had any path to genuine,
+    /// `base_seed`-tied randomness at all — `SpeedModel::enforce` was the only per-boid caller
+    /// with an `Rng` in hand. Draws from the same single, sequential write-phase `Rng` stream
+    /// `enforce`'s own unstall reseed already draws from (`rng::for_boid(base_seed,
+    /// WRITE_PHASE_RNG_SALT, step_count)`, advanced once per active boid in fixed index order),
+    /// not a fresh per-boid stream — deterministic and thread-count-independent by construction,
+    /// since the write phase itself is already sequential, not parallel.
+    fn post_steer(&self, _ctx: BoidCtx<'_>, _acc: &mut Vec3, _rng: &mut Rng) {}
 
     /// A per-boid speed-cap multiplier this hook wants enforced this step, if any — `None`
     /// means "no opinion." Fixes **G3** (roadmap.md §12): `SpeedModel::enforce` previously had

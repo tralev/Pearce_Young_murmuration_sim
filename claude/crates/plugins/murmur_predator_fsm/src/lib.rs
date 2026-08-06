@@ -451,7 +451,7 @@ impl StepHook for RicherPredator {
         };
     }
 
-    fn post_steer(&self, ctx: BoidCtx<'_>, acc: &mut Vec3) {
+    fn post_steer(&self, ctx: BoidCtx<'_>, acc: &mut Vec3, _rng: &mut murmur_core::Rng) {
         let cache = self.cache.lock().expect("predator cache mutex poisoned");
         match ctx.species {
             Species::Predator => {
@@ -676,7 +676,7 @@ mod tests {
             &domain,
         );
         let mut acc = Vec3::ZERO;
-        hook.post_steer(ctx, &mut acc);
+        hook.post_steer(ctx, &mut acc, &mut murmur_core::rng::for_boid(1, 2, 3));
         assert!(
             acc.x < 0.0,
             "egress predator should move further away (-x), got {acc:?}"
@@ -711,7 +711,11 @@ mod tests {
             &domain,
         );
         let mut acc_approach = Vec3::ZERO;
-        hook.post_steer(ctx, &mut acc_approach);
+        hook.post_steer(
+            ctx,
+            &mut acc_approach,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
 
         // Egress case: same geometry, predator already egressing -> no push/flee at all.
         let mut hook2 = default_hook();
@@ -745,7 +749,11 @@ mod tests {
             &domain,
         );
         let mut acc_egress = Vec3::ZERO;
-        hook2.post_steer(ctx2, &mut acc_egress);
+        hook2.post_steer(
+            ctx2,
+            &mut acc_egress,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
 
         assert!(
             acc_approach.x > 0.0,
@@ -808,7 +816,7 @@ mod tests {
             &domain,
         );
         let mut acc = Vec3::ZERO;
-        hook_mut.post_steer(ctx, &mut acc);
+        hook_mut.post_steer(ctx, &mut acc, &mut murmur_core::rng::for_boid(1, 2, 3));
         // Predator flies +x; prey is behind (-x) and offset +y -> wake force should push
         // further +y (out of the corridor), not toward -y.
         assert!(
@@ -846,7 +854,11 @@ mod tests {
             &domain,
         );
         let mut acc_near = Vec3::ZERO;
-        hook.post_steer(ctx_near, &mut acc_near);
+        hook.post_steer(
+            ctx_near,
+            &mut acc_near,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         assert!(
             acc_near.len() > 1e-6,
             "expected a nonzero blackening cohesion force: {acc_near:?}"
@@ -861,7 +873,11 @@ mod tests {
             &domain,
         );
         let mut acc_far = Vec3::ZERO;
-        hook.post_steer(ctx_far, &mut acc_far);
+        hook.post_steer(
+            ctx_far,
+            &mut acc_far,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         assert!(
             acc_far.len() < 1e-9,
             "expected no blackening force far outside awareness_radius: {acc_far:?}"
@@ -943,7 +959,7 @@ mod tests {
             &domain,
         );
         let mut acc = Vec3::ZERO;
-        hook.post_steer(ctx, &mut acc);
+        hook.post_steer(ctx, &mut acc, &mut murmur_core::rng::for_boid(1, 2, 3));
         // The only other panicking boid (index 2) is in the +y direction relative to boid 1;
         // the calm, much-closer-in-x boid (index 3, far -x) must not dominate the split pull.
         assert!(

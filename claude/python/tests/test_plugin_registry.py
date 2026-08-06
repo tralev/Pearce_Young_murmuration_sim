@@ -6,7 +6,7 @@ murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_dom
 murmur_ceiling_speed, murmur_none_speed, murmur_adaptive_index, murmur_hybrid_selection,
 murmur_spatial, murmur_angle, murmur_influencer, murmur_maxent_social, murmur_field,
 murmur_boid_state_machine, murmur_ecology, murmur_dynamic_vision_range,
-murmur_neighbor_adaptive_speed) were registered in murmur_core's own registry and had real Rust test
+murmur_neighbor_adaptive_speed, murmur_speed_noise) were registered in murmur_core's own registry and had real Rust test
 suites, but were never added to
 murmur_py's registry — there was no way to even construct a Simulation using any of them from
 Python. This file exists so that gap can't silently reopen: each plugin gets a small, real
@@ -440,3 +440,32 @@ def test_neighbor_adaptive_speed_step_hook_slows_a_densely_packed_flock():
     assert np.all(np.isfinite(tight.velocities()))
     assert np.all(np.isfinite(loose.velocities()))
     assert mean_speed(tight) < mean_speed(loose) - 0.05
+
+
+def test_speed_noise_step_hook_is_deterministic_and_lowers_mean_speed():
+    def mean_speed(sim):
+        return float(np.linalg.norm(sim.velocities(), axis=1).mean())
+
+    common = dict(
+        boid_count=150,
+        mode="pearce",
+        step_hooks=["speed_noise"],
+        smoothing=1.0,
+        cruise_speed=1.0,
+    )
+    a = m.Simulation(noise_amplitude=0.5, **common)
+    a.run_batch(50, 42)
+    b = m.Simulation(noise_amplitude=0.5, **common)
+    b.run_batch(50, 42)
+    assert a.state_hash() == b.state_hash(), "same base_seed must give a bit-identical run"
+
+    c = m.Simulation(noise_amplitude=0.5, **common)
+    c.run_batch(50, 43)
+    assert a.state_hash() != c.state_hash(), "a different base_seed must give a different run"
+
+    noisy = m.Simulation(noise_amplitude=0.5, **common)
+    noisy.run_batch(60, 3)
+    quiet = m.Simulation(noise_amplitude=0.0, **common)
+    quiet.run_batch(60, 3)
+    assert np.all(np.isfinite(noisy.velocities()))
+    assert mean_speed(noisy) < mean_speed(quiet) - 0.02

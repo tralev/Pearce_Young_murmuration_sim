@@ -340,7 +340,8 @@ pub fn step_hook(hook: &mut dyn StepHook) {
         step_count: 0,
     };
     let mut acc = Vec3::ZERO;
-    hook.post_steer(ctx, &mut acc);
+    let mut hook_rng = rng::for_boid(1, 2, 3);
+    hook.post_steer(ctx, &mut acc, &mut hook_rng);
     assert!(
         acc.is_finite(),
         "StepHook::post_steer must leave acc finite"

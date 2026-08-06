@@ -176,7 +176,7 @@ impl BoidStateMachine {
 }
 
 impl StepHook for BoidStateMachine {
-    fn post_steer(&self, ctx: BoidCtx<'_>, _acc: &mut Vec3) {
+    fn post_steer(&self, ctx: BoidCtx<'_>, _acc: &mut Vec3, _rng: &mut murmur_core::Rng) {
         let state = self.classify(&ctx);
         self.state.lock().unwrap().insert(ctx.index, state);
     }
@@ -253,6 +253,10 @@ mod tests {
             .collect()
     }
 
+    fn test_rng() -> murmur_core::Rng {
+        murmur_core::rng::for_boid(1, 2, 3)
+    }
+
     fn ctx<'a>(
         vel: Vec3,
         neighbors: &'a [Neighbor],
@@ -287,6 +291,7 @@ mod tests {
         hook.post_steer(
             ctx(Vec3::new(0.5, 0.0, 0.0), &n, &params, &domain),
             &mut acc,
+            &mut test_rng(),
         );
         assert_eq!(hook.state_of(0), Some(BoidState::Isolated));
     }
@@ -307,6 +312,7 @@ mod tests {
         hook.post_steer(
             ctx(Vec3::new(0.5, 0.0, 0.0), &n, &params, &domain),
             &mut acc,
+            &mut test_rng(),
         );
         assert_eq!(hook.state_of(0), Some(BoidState::Crowded));
     }
@@ -327,6 +333,7 @@ mod tests {
         hook.post_steer(
             ctx(Vec3::new(0.5, 0.0, 0.0), &n, &params, &domain),
             &mut acc,
+            &mut test_rng(),
         );
         assert_eq!(hook.state_of(0), Some(BoidState::Normal));
     }
@@ -346,6 +353,7 @@ mod tests {
         hook.post_steer(
             ctx(Vec3::new(2.0, 0.0, 0.0), &n, &params, &domain),
             &mut acc,
+            &mut test_rng(),
         ); // speed=2.0 > 1.5
         assert_eq!(hook.state_of(0), Some(BoidState::Threatened));
     }
@@ -368,6 +376,7 @@ mod tests {
         hook.post_steer(
             ctx(Vec3::new(0.5, 0.0, 0.0), &isolated_n, &params, &domain),
             &mut acc,
+            &mut test_rng(),
         );
         assert_eq!(
             hook.speed_cap_multiplier(0),
@@ -379,6 +388,7 @@ mod tests {
         hook.post_steer(
             ctx(Vec3::new(0.5, 0.0, 0.0), &crowded_n, &params, &domain),
             &mut acc,
+            &mut test_rng(),
         );
         assert_eq!(
             hook.speed_cap_multiplier(0),

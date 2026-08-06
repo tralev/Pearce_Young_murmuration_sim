@@ -79,7 +79,7 @@ impl StepHook for PredatorPrey {
         cache.predator_positions = predator_positions;
     }
 
-    fn post_steer(&self, ctx: BoidCtx<'_>, acc: &mut Vec3) {
+    fn post_steer(&self, ctx: BoidCtx<'_>, acc: &mut Vec3, _rng: &mut murmur_core::Rng) {
         let cache = self.cache.lock().expect("predator cache mutex poisoned");
         match ctx.species {
             Species::Predator => {
@@ -196,7 +196,7 @@ mod tests {
             step_count: 0,
         };
         let mut acc = Vec3::new(999.0, 999.0, 999.0); // pre-existing value must be overwritten
-        hook.post_steer(ctx, &mut acc);
+        hook.post_steer(ctx, &mut acc, &mut murmur_core::rng::for_boid(1, 2, 3));
         assert!(
             acc.x > 0.0,
             "predator should accelerate toward +x (prey COM), got {acc:?}"
@@ -238,7 +238,11 @@ mod tests {
             step_count: 0,
         };
         let mut acc_close = Vec3::ZERO;
-        hook.post_steer(ctx_close, &mut acc_close);
+        hook.post_steer(
+            ctx_close,
+            &mut acc_close,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         assert!(
             acc_close.x > 0.0,
             "flee force should point away (+x), got {acc_close:?}"
@@ -256,7 +260,11 @@ mod tests {
             step_count: 0,
         };
         let mut acc_far = Vec3::ZERO;
-        hook.post_steer(ctx_far, &mut acc_far);
+        hook.post_steer(
+            ctx_far,
+            &mut acc_far,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         assert_eq!(
             acc_far,
             Vec3::ZERO,
@@ -290,9 +298,17 @@ mod tests {
         };
 
         let mut acc_near = Vec3::ZERO;
-        hook.post_steer(near_ctx, &mut acc_near);
+        hook.post_steer(
+            near_ctx,
+            &mut acc_near,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         let mut acc_far = Vec3::ZERO;
-        hook.post_steer(far_ctx, &mut acc_far);
+        hook.post_steer(
+            far_ctx,
+            &mut acc_far,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         assert!(
             acc_near.len() > acc_far.len(),
             "closer prey should feel a stronger flee force: near={acc_near:?}, far={acc_far:?}"

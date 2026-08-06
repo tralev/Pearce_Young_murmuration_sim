@@ -10,7 +10,7 @@
 //! No scientific specificity of its own: a uniform bias field is one of several plausible ways
 //! to study directed vs. spontaneous order, not privileged over any other `StepHook`.
 
-use murmur_core::{BoidCtx, PluginParams, Registry, StepHook, Vec3};
+use murmur_core::{BoidCtx, PluginParams, Registry, Rng, StepHook, Vec3};
 
 pub struct ExternalField {
     /// Unit direction — normalized at construction, `Vec3::ZERO` (never NaN) if the configured
@@ -20,7 +20,7 @@ pub struct ExternalField {
 }
 
 impl StepHook for ExternalField {
-    fn post_steer(&self, _ctx: BoidCtx<'_>, acc: &mut Vec3) {
+    fn post_steer(&self, _ctx: BoidCtx<'_>, acc: &mut Vec3, _rng: &mut Rng) {
         *acc += self.direction * self.strength;
     }
 
@@ -104,7 +104,11 @@ mod tests {
         let p = params();
         let domain = DummyDomain;
         let mut acc = Vec3::new(1.0, 1.0, 1.0);
-        hook.post_steer(ctx(&p, &domain), &mut acc);
+        hook.post_steer(
+            ctx(&p, &domain),
+            &mut acc,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         assert!((acc - Vec3::new(1.0, 1.0 + 2.5, 1.0)).len() < 1e-9);
     }
 
@@ -118,7 +122,11 @@ mod tests {
         let domain = DummyDomain;
         let mut acc = Vec3::ZERO;
         for _ in 0..5 {
-            hook.post_steer(ctx(&p, &domain), &mut acc);
+            hook.post_steer(
+                ctx(&p, &domain),
+                &mut acc,
+                &mut murmur_core::rng::for_boid(1, 2, 3),
+            );
         }
         assert!((acc.x - 5.0).abs() < 1e-9, "should accumulate across calls");
     }
@@ -138,7 +146,11 @@ mod tests {
         let p = params();
         let domain = DummyDomain;
         let mut acc = Vec3::ZERO;
-        hook.post_steer(ctx(&p, &domain), &mut acc);
+        hook.post_steer(
+            ctx(&p, &domain),
+            &mut acc,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         assert!(
             (acc.len() - 1.0).abs() < 1e-9,
             "a raw field_x=100 direction should still normalize to unit length before scaling \
@@ -162,7 +174,11 @@ mod tests {
         let p = params();
         let domain = DummyDomain;
         let mut acc = Vec3::ZERO;
-        hook.post_steer(ctx(&p, &domain), &mut acc);
+        hook.post_steer(
+            ctx(&p, &domain),
+            &mut acc,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         assert_eq!(acc, Vec3::ZERO);
         assert!(acc.is_finite());
     }
@@ -177,7 +193,11 @@ mod tests {
         let p = params();
         let domain = DummyDomain;
         let mut acc = Vec3::ZERO;
-        hook.post_steer(ctx(&p, &domain), &mut acc);
+        hook.post_steer(
+            ctx(&p, &domain),
+            &mut acc,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         assert!((acc.len() - 0.1).abs() < 1e-9);
     }
 

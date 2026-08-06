@@ -33,7 +33,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use murmur_core::{BoidCtx, ConfigError, PluginParams, Registry, StepHook, Vec3};
+use murmur_core::{BoidCtx, ConfigError, PluginParams, Registry, Rng, StepHook, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NeighborAdaptiveSpeedParams {
@@ -167,7 +167,7 @@ impl NeighborAdaptiveSpeed {
 }
 
 impl StepHook for NeighborAdaptiveSpeed {
-    fn post_steer(&self, ctx: BoidCtx<'_>, _acc: &mut Vec3) {
+    fn post_steer(&self, ctx: BoidCtx<'_>, _acc: &mut Vec3, _rng: &mut Rng) {
         let m = self.compute_multiplier(ctx.neighbors.len() as u32);
         self.multiplier.lock().unwrap().insert(ctx.index, m);
     }
@@ -278,7 +278,11 @@ mod tests {
         let domain = StubDomain;
         let n = neighbors(1);
         let mut acc = Vec3::ZERO;
-        hook.post_steer(ctx(&n, &params, &domain), &mut acc);
+        hook.post_steer(
+            ctx(&n, &params, &domain),
+            &mut acc,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         assert_eq!(hook.multiplier_of(0), Some(1.0));
         assert_eq!(hook.speed_cap_multiplier(0), Some(1.0));
     }
@@ -296,7 +300,11 @@ mod tests {
         let domain = StubDomain;
         let n = neighbors(20);
         let mut acc = Vec3::ZERO;
-        hook.post_steer(ctx(&n, &params, &domain), &mut acc);
+        hook.post_steer(
+            ctx(&n, &params, &domain),
+            &mut acc,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         assert_eq!(hook.multiplier_of(0), Some(0.4));
     }
 
@@ -315,7 +323,11 @@ mod tests {
         let domain = StubDomain;
         let n = neighbors(5); // exactly halfway between low_count=0 and high_count=10
         let mut acc = Vec3::ZERO;
-        hook.post_steer(ctx(&n, &params, &domain), &mut acc);
+        hook.post_steer(
+            ctx(&n, &params, &domain),
+            &mut acc,
+            &mut murmur_core::rng::for_boid(1, 2, 3),
+        );
         let expected = 0.5 * (1.0 + 0.4); // midpoint of max and min
         assert!(
             (hook.multiplier_of(0).unwrap() - expected).abs() < 1e-9,
@@ -334,7 +346,11 @@ mod tests {
         let mut previous = f64::INFINITY;
         for count in [0usize, 1, 2, 4, 6, 8, 10, 12, 15, 20] {
             let n = neighbors(count);
-            hook.post_steer(ctx(&n, &params, &domain), &mut acc);
+            hook.post_steer(
+                ctx(&n, &params, &domain),
+                &mut acc,
+                &mut murmur_core::rng::for_boid(1, 2, 3),
+            );
             let m = hook.multiplier_of(0).unwrap();
             assert!(
                 m <= previous + 1e-12,

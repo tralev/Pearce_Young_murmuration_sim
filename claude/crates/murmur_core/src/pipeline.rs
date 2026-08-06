@@ -416,7 +416,7 @@ impl Simulation {
                 };
                 let mut acc_i = self.boids.acc[idx];
                 for hook in &self.step_hooks {
-                    hook.post_steer(ctx, &mut acc_i);
+                    hook.post_steer(ctx, &mut acc_i, &mut write_rng);
                     if let Some(m) = hook.speed_cap_multiplier(i) {
                         cap_multiplier = cap_multiplier.min(m);
                     }
@@ -819,7 +819,7 @@ mod tests {
 
     struct LoggingHook(&'static str);
     impl StepHook for LoggingHook {
-        fn post_steer(&self, _ctx: BoidCtx<'_>, _acc: &mut Vec3) {
+        fn post_steer(&self, _ctx: BoidCtx<'_>, _acc: &mut Vec3, _rng: &mut crate::rng::Rng) {
             ORDER_LOG.lock().unwrap().push(self.0);
         }
         fn name(&self) -> &'static str {
@@ -933,7 +933,7 @@ mod tests {
 
     struct NeighborCountingHook;
     impl StepHook for NeighborCountingHook {
-        fn post_steer(&self, ctx: BoidCtx<'_>, _acc: &mut Vec3) {
+        fn post_steer(&self, ctx: BoidCtx<'_>, _acc: &mut Vec3, _rng: &mut crate::rng::Rng) {
             if ctx.index == 1 {
                 NEIGHBOR_COUNT_LOG.lock().unwrap().push(ctx.neighbors.len());
             }
@@ -983,6 +983,63 @@ mod tests {
             *NEIGHBOR_COUNT_LOG.lock().unwrap(),
             vec![2],
             "the middle boid must see both other real boids as neighbours, not an empty placeholder"
+        );
+    }
+
+    static RNG_DRAW_LOG: std::sync::Mutex<Vec<u64>> = std::sync::Mutex::new(Vec::new());
+
+    struct RngDrawingHook;
+    impl StepHook for RngDrawingHook {
+        fn post_steer(&self, _ctx: BoidCtx<'_>, _acc: &mut Vec3, rng: &mut crate::rng::Rng) {
+            use rand_core::RngCore;
+            RNG_DRAW_LOG.lock().unwrap().push(rng.next_u64());
+        }
+        fn name(&self) -> &'static str {
+            "rng_drawing_hook"
+        }
+    }
+
+    fn rng_drawing_config() -> SimConfig {
+        let mut config = dummy_config();
+        config.core_params = CoreParams::builder().boid_count(2).build().unwrap();
+        config.step_hooks = vec!["rng_drawing_hook".to_string()];
+        config
+    }
+
+    /// G8 (roadmap.md §12): before this fix, `StepHook::post_steer` had no path to genuine,
+    /// `base_seed`-tied randomness at all -- `SpeedModel::enforce` was the only per-boid caller
+    /// with an `Rng` in hand. Proves the fix two ways: the same `base_seed` gives identical
+    /// draws across independent runs (determinism), and a different `base_seed` gives different
+    /// draws (the values are genuinely tied to it, not some fixed internal source).
+    #[test]
+    fn post_steers_rng_argument_is_real_and_tied_to_base_seed() {
+        let mut registry = Registry::new();
+        register_all_dummies(&mut registry);
+        registry.register_step_hook("rng_drawing_hook", |_p: &PluginParams| {
+            Box::new(RngDrawingHook) as Box<dyn StepHook>
+        });
+
+        RNG_DRAW_LOG.lock().unwrap().clear();
+        let mut sim_a = Simulation::new(rng_drawing_config(), &registry).unwrap();
+        sim_a.step(1.0, 42);
+        let draws_a = RNG_DRAW_LOG.lock().unwrap().clone();
+
+        RNG_DRAW_LOG.lock().unwrap().clear();
+        let mut sim_a_repeat = Simulation::new(rng_drawing_config(), &registry).unwrap();
+        sim_a_repeat.step(1.0, 42);
+        let draws_a_repeat = RNG_DRAW_LOG.lock().unwrap().clone();
+        assert_eq!(
+            draws_a, draws_a_repeat,
+            "the same base_seed must give identical post_steer RNG draws"
+        );
+
+        RNG_DRAW_LOG.lock().unwrap().clear();
+        let mut sim_b = Simulation::new(rng_drawing_config(), &registry).unwrap();
+        sim_b.step(1.0, 99);
+        let draws_b = RNG_DRAW_LOG.lock().unwrap().clone();
+        assert_ne!(
+            draws_a, draws_b,
+            "a different base_seed must give different post_steer RNG draws"
         );
     }
 }
