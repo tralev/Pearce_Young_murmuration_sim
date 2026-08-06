@@ -25,6 +25,7 @@ murmur_instant_response = { path = "../plugins/murmur_instant_response" }
 murmur_adaptive_index = { path = "../plugins/murmur_adaptive_index" }
 murmur_angle = { path = "../plugins/murmur_angle" }
 murmur_influencer = { path = "../plugins/murmur_influencer" }
+murmur_boid_state_machine = { path = "../plugins/murmur_boid_state_machine" }
 murmur_field = { path = "../plugins/murmur_field" }
 murmur_maxent_social = { path = "../plugins/murmur_maxent_social" }
 murmur_ceiling_speed = { path = "../plugins/murmur_ceiling_speed" }

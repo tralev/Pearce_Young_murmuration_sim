@@ -18,8 +18,18 @@ pub struct FixedSpeed {
 }
 
 impl SpeedModel for FixedSpeed {
-    fn enforce(&self, vel: &mut Vec3, _species: Species, params: &CoreParams, rng: &mut Rng) {
-        let target = params.cruise_speed * self.speed_factor;
+    fn enforce(
+        &self,
+        vel: &mut Vec3,
+        _species: Species,
+        params: &CoreParams,
+        cap_multiplier: f64,
+        rng: &mut Rng,
+    ) {
+        // G3 (roadmap.md §12): a StepHook's cap_multiplier tightens the target speed itself —
+        // FixedSpeed has no separate "ceiling" to narrow, unlike BandSpeed's vmax, so the whole
+        // target is what a tightening hook scales down.
+        let target = params.cruise_speed * self.speed_factor * cap_multiplier;
         let s = vel.len();
         *vel = if s > MIN_LEN {
             *vel * (target / s)
@@ -71,7 +81,7 @@ mod tests {
         let p = params();
         let mut vel = Vec3::new(1000.0, 0.0, 0.0);
         let mut rng = for_boid(1, 1, 1);
-        FixedSpeed { speed_factor: 1.0 }.enforce(&mut vel, Species::Prey, &p, &mut rng);
+        FixedSpeed { speed_factor: 1.0 }.enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert!((vel.len() - p.cruise_speed).abs() < 1e-9);
         assert!(vel.x > 0.0, "direction preserved");
     }
@@ -81,7 +91,7 @@ mod tests {
         let p = params();
         let mut vel = Vec3::new(0.001, 0.0, 0.0);
         let mut rng = for_boid(1, 1, 1);
-        FixedSpeed { speed_factor: 1.0 }.enforce(&mut vel, Species::Prey, &p, &mut rng);
+        FixedSpeed { speed_factor: 1.0 }.enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert!((vel.len() - p.cruise_speed).abs() < 1e-9);
         assert!(vel.x > 0.0, "direction preserved");
     }
@@ -94,7 +104,7 @@ mod tests {
         let mut vel = Vec3::new(0.0, p.cruise_speed, 0.0); // already exactly at target
         let before = vel;
         let mut rng = for_boid(1, 1, 1);
-        FixedSpeed { speed_factor: 1.0 }.enforce(&mut vel, Species::Prey, &p, &mut rng);
+        FixedSpeed { speed_factor: 1.0 }.enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         // Same value in this exact case (already correct), but reached via the "set," not
         // "leave alone," code path — checked properly by the next test's mid-range case.
         assert_eq!(vel, before);
@@ -105,7 +115,7 @@ mod tests {
         let p = params(); // vmin=3.0, vmax=10.0 under BandSpeed's convention
         let mut vel = Vec3::new(5.0, 0.0, 0.0); // BandSpeed would leave this untouched
         let mut rng = for_boid(1, 1, 1);
-        FixedSpeed { speed_factor: 1.0 }.enforce(&mut vel, Species::Prey, &p, &mut rng);
+        FixedSpeed { speed_factor: 1.0 }.enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert!(
             (vel.len() - p.cruise_speed).abs() < 1e-9,
             "FixedSpeed has no untouched zone — everything snaps to the target"
@@ -117,7 +127,7 @@ mod tests {
         let p = params();
         let mut vel = Vec3::ZERO;
         let mut rng = for_boid(1, 1, 1);
-        FixedSpeed { speed_factor: 1.0 }.enforce(&mut vel, Species::Prey, &p, &mut rng);
+        FixedSpeed { speed_factor: 1.0 }.enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert!(vel.is_finite());
         assert!((vel.len() - p.cruise_speed).abs() < 1e-9);
     }
@@ -129,8 +139,8 @@ mod tests {
         let mut predator = Vec3::new(1000.0, 0.0, 0.0);
         let mut rng = for_boid(1, 1, 1);
         let model = FixedSpeed { speed_factor: 1.0 };
-        model.enforce(&mut prey, Species::Prey, &p, &mut rng);
-        model.enforce(&mut predator, Species::Predator, &p, &mut rng);
+        model.enforce(&mut prey, Species::Prey, &p, 1.0, &mut rng);
+        model.enforce(&mut predator, Species::Predator, &p, 1.0, &mut rng);
         assert!(
             (prey.len() - predator.len()).abs() < 1e-9,
             "prey and predator get the same fixed speed"
@@ -158,8 +168,23 @@ mod tests {
         let p = params();
         let mut rng = for_boid(1, 1, 1);
         let mut vel = Vec3::new(1000.0, 0.0, 0.0);
-        model.enforce(&mut vel, Species::Prey, &p, &mut rng);
+        model.enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert!((vel.len() - 0.5 * p.cruise_speed).abs() < 1e-9);
+    }
+
+    /// G3 (roadmap.md §12): `cap_multiplier` must tighten the target itself, not just be
+    /// accepted and ignored.
+    #[test]
+    fn cap_multiplier_tightens_the_target_speed() {
+        let p = params();
+        let mut vel = Vec3::new(1000.0, 0.0, 0.0);
+        let mut rng = for_boid(1, 1, 1);
+        FixedSpeed { speed_factor: 1.0 }.enforce(&mut vel, Species::Prey, &p, 0.5, &mut rng);
+        assert!(
+            (vel.len() - 0.5 * p.cruise_speed).abs() < 1e-9,
+            "expected target capped at half cruise_speed, got {}",
+            vel.len()
+        );
     }
 
     /// Proves the `SpeedModel` seam now has ≥2 real occupants (roadmap.md Phase 13 exit gate,

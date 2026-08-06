@@ -65,6 +65,7 @@ fn build_registry() -> Registry {
     murmur_influencer::register(&mut reg);
     murmur_maxent_social::register(&mut reg);
     murmur_field::register(&mut reg);
+    murmur_boid_state_machine::register(&mut reg);
     reg
 }
 
@@ -285,6 +286,10 @@ impl PySimulation {
         anchor_count = 3,
         anchor_spread = 20.0,
         anchor_weight = 1.0,
+        isolated_max = 1,
+        crowded_min = 12,
+        threat_speed_factor = 1.5,
+        crowded_speed_cap = 0.7,
         knn_k = 6,
         speed_factor = 1.0,
         awareness_radius = None,
@@ -401,6 +406,10 @@ impl PySimulation {
         anchor_count: u32,
         anchor_spread: f64,
         anchor_weight: f64,
+        isolated_max: u32,
+        crowded_min: u32,
+        threat_speed_factor: f64,
+        crowded_speed_cap: f64,
         knn_k: u32,
         speed_factor: f64,
         awareness_radius: Option<f64>,
@@ -557,6 +566,10 @@ impl PySimulation {
             .with("anchor_count", anchor_count as f64)
             .with("anchor_spread", anchor_spread)
             .with("anchor_weight", anchor_weight)
+            .with("isolated_max", isolated_max as f64)
+            .with("crowded_min", crowded_min as f64)
+            .with("threat_speed_factor", threat_speed_factor)
+            .with("crowded_speed_cap", crowded_speed_cap)
             .with("k", knn_k as f64)
             .with("speed_factor", speed_factor);
 

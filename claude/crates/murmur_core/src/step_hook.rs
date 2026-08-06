@@ -23,6 +23,19 @@ pub trait StepHook: Send + Sync {
     /// that fully owns a species' behaviour (e.g. predator–prey's predator motion) may instead
     /// overwrite `*acc` outright for that species — see `murmur_predator` for the precedent.
     fn post_steer(&self, _ctx: BoidCtx<'_>, _acc: &mut Vec3) {}
+
+    /// A per-boid speed-cap multiplier this hook wants enforced this step, if any — `None`
+    /// means "no opinion." Fixes **G3** (roadmap.md §12): `SpeedModel::enforce` previously had
+    /// no way to see any hook's own per-boid state at all. Read once per active boid in the
+    /// write phase, right after `post_steer` (so a hook that computes its own state during
+    /// `post_steer` can act on the same-step value, not last step's) — every hook's answer is
+    /// combined via `min` (the most restrictive hook wins) before being passed to
+    /// `SpeedModel::enforce`'s own `cap_multiplier` parameter. Default `None` — every `StepHook`
+    /// before `murmur_boid_state_machine` has no opinion here, so this costs nothing for them.
+    fn speed_cap_multiplier(&self, _index: u32) -> Option<f64> {
+        None
+    }
+
     fn name(&self) -> &'static str;
 
     /// Names of other `StepHook`s this one must run after (validated at construction — an

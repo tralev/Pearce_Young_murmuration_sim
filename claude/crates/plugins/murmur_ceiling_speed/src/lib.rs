@@ -18,10 +18,17 @@ pub struct CeilingSpeed {
 }
 
 impl SpeedModel for CeilingSpeed {
-    fn enforce(&self, vel: &mut Vec3, species: Species, params: &CoreParams, _rng: &mut Rng) {
+    fn enforce(
+        &self,
+        vel: &mut Vec3,
+        species: Species,
+        params: &CoreParams,
+        cap_multiplier: f64,
+        _rng: &mut Rng,
+    ) {
         let vmax = match species {
-            Species::Predator => params.cruise_speed * self.predator_speed_factor,
-            Species::Prey | Species::Custom(_) => params.cruise_speed,
+            Species::Predator => params.cruise_speed * self.predator_speed_factor * cap_multiplier,
+            Species::Prey | Species::Custom(_) => params.cruise_speed * cap_multiplier,
         };
         let s = vel.len();
         if s > vmax {
@@ -75,7 +82,7 @@ mod tests {
         CeilingSpeed {
             predator_speed_factor: 2.0,
         }
-        .enforce(&mut vel, Species::Prey, &p, &mut rng);
+        .enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert!((vel.len() - p.cruise_speed).abs() < 1e-9);
         assert!(vel.x > 0.0, "direction preserved");
     }
@@ -89,7 +96,7 @@ mod tests {
         CeilingSpeed {
             predator_speed_factor: 2.0,
         }
-        .enforce(&mut vel, Species::Prey, &p, &mut rng);
+        .enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert_eq!(vel, before, "cap-only must never touch an underspeed boid");
     }
 
@@ -101,7 +108,7 @@ mod tests {
         CeilingSpeed {
             predator_speed_factor: 2.0,
         }
-        .enforce(&mut vel, Species::Prey, &p, &mut rng);
+        .enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert_eq!(
             vel,
             Vec3::ZERO,
@@ -118,8 +125,8 @@ mod tests {
         let model = CeilingSpeed {
             predator_speed_factor: 2.0,
         };
-        model.enforce(&mut prey, Species::Prey, &p, &mut rng);
-        model.enforce(&mut predator, Species::Predator, &p, &mut rng);
+        model.enforce(&mut prey, Species::Prey, &p, 1.0, &mut rng);
+        model.enforce(&mut predator, Species::Predator, &p, 1.0, &mut rng);
         assert!((prey.len() - p.cruise_speed).abs() < 1e-9);
         assert!((predator.len() - 2.0 * p.cruise_speed).abs() < 1e-9);
     }
@@ -133,8 +140,26 @@ mod tests {
         CeilingSpeed {
             predator_speed_factor: 2.0,
         }
-        .enforce(&mut vel, Species::Prey, &p, &mut rng);
+        .enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert_eq!(vel, before);
+    }
+
+    /// G3 (roadmap.md §12): `cap_multiplier` must tighten the ceiling itself, not just be
+    /// accepted and ignored.
+    #[test]
+    fn cap_multiplier_tightens_the_ceiling_below_cruise_speed() {
+        let p = params();
+        let mut vel = Vec3::new(1000.0, 0.0, 0.0);
+        let mut rng = for_boid(1, 1, 1);
+        CeilingSpeed {
+            predator_speed_factor: 2.0,
+        }
+        .enforce(&mut vel, Species::Prey, &p, 0.5, &mut rng);
+        assert!(
+            (vel.len() - 0.5 * p.cruise_speed).abs() < 1e-9,
+            "expected ceiling tightened to half cruise_speed, got {}",
+            vel.len()
+        );
     }
 
     #[test]
@@ -158,7 +183,7 @@ mod tests {
         let p = params();
         let mut rng = for_boid(1, 1, 1);
         let mut vel = Vec3::new(1000.0, 0.0, 0.0);
-        model.enforce(&mut vel, Species::Predator, &p, &mut rng);
+        model.enforce(&mut vel, Species::Predator, &p, 1.0, &mut rng);
         assert!((vel.len() - 3.0 * p.cruise_speed).abs() < 1e-9);
     }
 }

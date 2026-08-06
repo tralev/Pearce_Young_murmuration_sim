@@ -378,16 +378,38 @@ impl Simulation {
         for i in self.boids.iter_active().collect::<Vec<_>>() {
             let idx = i as usize;
 
+            // G3 (roadmap.md §12): the most restrictive `StepHook::speed_cap_multiplier()`
+            // wins (combined via `min`) — `1.0` (no tightening) when no hook has an opinion,
+            // so this costs nothing when `step_hooks` is empty or no hook overrides it.
+            let mut cap_multiplier = 1.0_f64;
+
             if !self.step_hooks.is_empty() {
                 let domain: &dyn Domain = &*self.domain;
+                // G1 (roadmap.md §12): `ctx.neighbors` used to be a hardcoded `&[]` — no hook
+                // could see real neighbour data during `post_steer` at all. Fixed by recomputing
+                // it here via the same `NeighborSelection` the read phase uses. Two disclosed
+                // wrinkles, both acceptable for what needs this (`murmur_boid_state_machine`'s
+                // coarse local-density classification, not precision physics): (1) `spatial_index`
+                // itself isn't rebuilt mid-write-phase, so cell/bucket membership reflects
+                // start-of-step positions; (2) since this loop is sequential and mutates
+                // `boids.pos`/`vel` in place as it goes, a lower-indexed boid processed earlier
+                // this same step has *already* moved by the time a later boid's neighbour query
+                // reads its position — a real, if minor, Gauss-Seidel-style mixing of
+                // pre-/post-integration state, not a crash or NaN risk. `FlockingMode::desired()`
+                // stays the source of truth for anything needing a consistent, whole-flock-frozen
+                // snapshot; this seam is deliberately the cheaper, approximate one.
+                let neighbors = self.neighbor_selection.select(
+                    &*self.spatial_index,
+                    i,
+                    &self.boids,
+                    &self.core_params,
+                );
                 let ctx = BoidCtx {
                     index: i,
                     pos: self.boids.pos[idx],
                     vel: self.boids.vel[idx],
                     species: self.boids.species[idx],
-                    neighbors: &[], // see StepHook trait doc: full neighbour wiring lands with
-                    // the first real StepHook plugin (Phase 8), which doesn't need them anyway
-                    // (predator-prey reads global predator state, not local neighbours).
+                    neighbors: &neighbors,
                     core_params: &self.core_params,
                     step_count: self.step_count,
                     domain,
@@ -395,6 +417,9 @@ impl Simulation {
                 let mut acc_i = self.boids.acc[idx];
                 for hook in &self.step_hooks {
                     hook.post_steer(ctx, &mut acc_i);
+                    if let Some(m) = hook.speed_cap_multiplier(i) {
+                        cap_multiplier = cap_multiplier.min(m);
+                    }
                 }
                 self.boids.acc[idx] = acc_i;
             }
@@ -406,6 +431,7 @@ impl Simulation {
                 &mut self.boids.vel[idx],
                 self.boids.species[idx],
                 &self.core_params,
+                cap_multiplier,
                 &mut write_rng,
             );
             self.boids.pos[idx] += self.boids.vel[idx] * dt;
@@ -564,6 +590,7 @@ mod tests {
             _vel: &mut Vec3,
             _species: Species,
             _params: &CoreParams,
+            _cap_multiplier: f64,
             _rng: &mut CoreRng,
         ) {
         }
@@ -588,6 +615,39 @@ mod tests {
         }
         fn name(&self) -> &'static str {
             "dummy_init"
+        }
+    }
+
+    /// A real (not empty-returning) brute-force `NeighborSelection`, self-contained here since
+    /// `murmur_core` can't dev-depend on any real plugin crate (they all depend on it — that
+    /// would be a cycle). Only used by the G1 regression test below.
+    struct BruteForceNeighbors;
+    impl NeighborSelection for BruteForceNeighbors {
+        fn select(
+            &self,
+            _index: &dyn SpatialIndex,
+            i: u32,
+            boids: &BoidColumns,
+            params: &CoreParams,
+        ) -> Vec<crate::neighbor::Neighbor> {
+            let pos_i = boids.pos[i as usize];
+            boids
+                .iter_active()
+                .filter(|&j| j != i)
+                .filter_map(|j| {
+                    let offset = boids.pos[j as usize] - pos_i;
+                    let d = offset.len();
+                    (d <= params.vision_radius && d > 1e-9).then(|| crate::neighbor::Neighbor {
+                        index: j,
+                        distance: d,
+                        direction: offset / d,
+                        velocity: boids.vel[j as usize],
+                    })
+                })
+                .collect()
+        }
+        fn name(&self) -> &'static str {
+            "brute_force_neighbors"
         }
     }
 
@@ -790,5 +850,139 @@ mod tests {
         sim.step(1.0, 1);
 
         assert_eq!(*ORDER_LOG.lock().unwrap(), vec!["hook_a", "hook_b"]);
+    }
+
+    struct CapHook(f64);
+    impl StepHook for CapHook {
+        fn speed_cap_multiplier(&self, _index: u32) -> Option<f64> {
+            Some(self.0)
+        }
+        fn name(&self) -> &'static str {
+            "cap_hook"
+        }
+    }
+
+    /// G3 (roadmap.md §12): the whole point of the channel — a `StepHook`'s
+    /// `speed_cap_multiplier` must actually reach `SpeedModel::enforce` and be enforced, not
+    /// just compile. Uses the real `band` `SpeedModel` (not a dummy), so this is a genuine
+    /// end-to-end proof of the plumbing, not just that the new trait method exists.
+    #[test]
+    fn a_step_hooks_speed_cap_multiplier_is_actually_enforced_by_the_speed_model() {
+        let mut registry = Registry::new();
+        register_all_dummies(&mut registry);
+        crate::speed_model::register(&mut registry);
+        registry.register_step_hook("cap_hook", |_p: &PluginParams| {
+            Box::new(CapHook(0.1)) as Box<dyn StepHook>
+        });
+
+        let mut config = dummy_config();
+        config.speed_model = "band".to_string();
+        config.core_params = CoreParams::builder()
+            .boid_count(1)
+            .cruise_speed(10.0)
+            .build()
+            .unwrap();
+        config.step_hooks = vec!["cap_hook".to_string()];
+        let mut sim = Simulation::new(config, &registry).unwrap();
+
+        sim.step(1.0, 1); // DummyInit starts every boid at speed = cruise_speed = 10.0
+
+        let capped_speed = sim.boids.vel[0].len();
+        assert!(
+            (capped_speed - 1.0).abs() < 1e-6,
+            "expected speed capped at cruise_speed(10.0) * cap_multiplier(0.1) = 1.0, got {}",
+            capped_speed
+        );
+    }
+
+    /// The combine rule is `min` across hooks — the *most* restrictive one wins, not the last
+    /// registered or an average.
+    #[test]
+    fn multiple_hooks_speed_cap_multipliers_combine_via_min() {
+        let mut registry = Registry::new();
+        register_all_dummies(&mut registry);
+        crate::speed_model::register(&mut registry);
+        registry.register_step_hook("loose_cap", |_p: &PluginParams| {
+            Box::new(CapHook(0.8)) as Box<dyn StepHook>
+        });
+        registry.register_step_hook("tight_cap", |_p: &PluginParams| {
+            Box::new(CapHook(0.2)) as Box<dyn StepHook>
+        });
+
+        let mut config = dummy_config();
+        config.speed_model = "band".to_string();
+        config.core_params = CoreParams::builder()
+            .boid_count(1)
+            .cruise_speed(10.0)
+            .build()
+            .unwrap();
+        config.step_hooks = vec!["loose_cap".to_string(), "tight_cap".to_string()];
+        let mut sim = Simulation::new(config, &registry).unwrap();
+
+        sim.step(1.0, 1);
+
+        let capped_speed = sim.boids.vel[0].len();
+        assert!(
+            (capped_speed - 2.0).abs() < 1e-6,
+            "expected the tighter 0.2 cap to win (10.0 * 0.2 = 2.0), got {}",
+            capped_speed
+        );
+    }
+
+    static NEIGHBOR_COUNT_LOG: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
+
+    struct NeighborCountingHook;
+    impl StepHook for NeighborCountingHook {
+        fn post_steer(&self, ctx: BoidCtx<'_>, _acc: &mut Vec3) {
+            if ctx.index == 1 {
+                NEIGHBOR_COUNT_LOG.lock().unwrap().push(ctx.neighbors.len());
+            }
+        }
+        fn name(&self) -> &'static str {
+            "neighbor_counting_hook"
+        }
+    }
+
+    /// G1 (roadmap.md §12): `post_steer`'s `ctx.neighbors` was a hardcoded `&[]` — no `StepHook`
+    /// could see real neighbour data at all. This is the actual end-to-end proof, not just that
+    /// the code compiles: 3 boids at x=0,1,2 (`DummyInit`'s own spacing), `vision_radius` wide
+    /// enough to see both others — the middle boid (index 1) must see exactly 2 real neighbours
+    /// during `post_steer`, not 0.
+    #[test]
+    fn post_steers_ctx_neighbors_is_real_not_a_hardcoded_empty_placeholder() {
+        NEIGHBOR_COUNT_LOG.lock().unwrap().clear();
+
+        let mut registry = Registry::new();
+        registry.register_mode("dummy_mode", |_| Box::new(DummyMode));
+        registry.register_modifier("dummy_modifier", |_| Box::new(DummyModifier));
+        registry.register_domain("dummy_domain", |_| Box::new(DummyDomain));
+        registry.register_spatial_index("dummy_spatial_index", |_| Box::new(DummySpatialIndex));
+        registry.register_neighbor_selection("brute_force_neighbors", |_| {
+            Box::new(BruteForceNeighbors)
+        });
+        registry.register_speed_model("dummy_speed_model", |_| Box::new(DummySpeedModel));
+        registry.register_init("dummy_init", |_| Box::new(DummyInit));
+        registry.register_noise("dummy_noise", |_| Box::new(DummyNoise));
+        registry.register_step_hook("neighbor_counting_hook", |_p: &PluginParams| {
+            Box::new(NeighborCountingHook) as Box<dyn StepHook>
+        });
+
+        let mut config = dummy_config();
+        config.neighbor_selection = "brute_force_neighbors".to_string();
+        config.core_params = CoreParams::builder()
+            .boid_count(3)
+            .vision_radius(5.0) // wide enough to see both other boids at spacing 1
+            .build()
+            .unwrap();
+        config.step_hooks = vec!["neighbor_counting_hook".to_string()];
+        let mut sim = Simulation::new(config, &registry).unwrap();
+
+        sim.step(1.0, 1);
+
+        assert_eq!(
+            *NEIGHBOR_COUNT_LOG.lock().unwrap(),
+            vec![2],
+            "the middle boid must see both other real boids as neighbours, not an empty placeholder"
+        );
     }
 }

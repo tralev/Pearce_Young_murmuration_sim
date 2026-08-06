@@ -17,7 +17,18 @@ use murmur_core::{CoreParams, PluginParams, Registry, Rng, Species, SpeedModel, 
 pub struct NoneSpeed;
 
 impl SpeedModel for NoneSpeed {
-    fn enforce(&self, _vel: &mut Vec3, _species: Species, _params: &CoreParams, _rng: &mut Rng) {}
+    /// Ignores `cap_multiplier` (G3, roadmap.md §12) same as every other parameter — a true
+    /// no-op means exactly that, including a `StepHook`'s speed-cap request. A caller wanting
+    /// `boid_state_machine`'s cap actually enforced needs a `SpeedModel` that does something.
+    fn enforce(
+        &self,
+        _vel: &mut Vec3,
+        _species: Species,
+        _params: &CoreParams,
+        _cap_multiplier: f64,
+        _rng: &mut Rng,
+    ) {
+    }
 
     fn name(&self) -> &'static str {
         "none_speed"
@@ -56,7 +67,7 @@ mod tests {
         let mut vel = Vec3::new(1000.0, 0.0, 0.0);
         let before = vel;
         let mut rng = for_boid(1, 1, 1);
-        NoneSpeed.enforce(&mut vel, Species::Prey, &p, &mut rng);
+        NoneSpeed.enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert_eq!(vel, before);
     }
 
@@ -65,7 +76,7 @@ mod tests {
         let p = params();
         let mut vel = Vec3::ZERO;
         let mut rng = for_boid(1, 1, 1);
-        NoneSpeed.enforce(&mut vel, Species::Prey, &p, &mut rng);
+        NoneSpeed.enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert_eq!(vel, Vec3::ZERO);
     }
 
@@ -75,8 +86,8 @@ mod tests {
         let mut prey = Vec3::new(37.0, -4.0, 2.0);
         let mut predator = prey;
         let mut rng = for_boid(1, 1, 1);
-        NoneSpeed.enforce(&mut prey, Species::Prey, &p, &mut rng);
-        NoneSpeed.enforce(&mut predator, Species::Predator, &p, &mut rng);
+        NoneSpeed.enforce(&mut prey, Species::Prey, &p, 1.0, &mut rng);
+        NoneSpeed.enforce(&mut predator, Species::Predator, &p, 1.0, &mut rng);
         assert_eq!(prey, predator);
     }
 

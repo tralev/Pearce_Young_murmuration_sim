@@ -169,5 +169,11 @@ active), and `murmur_field` (11-term Lissajous blob-anchor field mode — genera
 `murmur_influencer` to multiple spatially-distributed, phase-staggered anchors; verified a real
 flock genuinely splits across ≥2 anchors rather than collapsing onto one shared target).
 `analysis/force_inference.py` (pairs with `murmur_maxent_social`, not blocking) remains open.
-Obstacles (SDF/CSG avoidance) and ecology
-(predator/prey population dynamics beyond the FSM) — Phase 18 — are not built.
+Phase 18 (remaining `StepHook` plugins) is in progress: `murmur_boid_state_machine` (per-boid
+Normal/Isolated/Crowded/Threatened classification + a Crowded-only speed-cap multiplier) is
+done, fixing **G1** (`post_steer`'s `ctx.neighbors` was a hardcoded empty placeholder) and
+**G3** (no channel for a `StepHook` to influence `SpeedModel` enforcement) together — both
+verified end to end: a real densely-packed flock ends up measurably slower than a sparse one,
+not just correct in isolated unit calls. Obstacles (SDF/CSG avoidance), ecology (predator/prey
+population dynamics beyond the FSM), `wander`, `ripple`, `dynamic_vision_range`,
+`neighbor_adaptive_speed`, and `speed_noise` are not built.

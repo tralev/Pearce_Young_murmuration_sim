@@ -4,8 +4,9 @@ Phase 13/14/15/16 plugins (murmur_spin_wave, murmur_external_field, murmur_torus
 murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed, murmur_predator_fsm,
 murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_domain,
 murmur_ceiling_speed, murmur_none_speed, murmur_adaptive_index, murmur_hybrid_selection,
-murmur_spatial, murmur_angle, murmur_influencer, murmur_maxent_social, murmur_field) were
-registered in murmur_core's own registry and had real Rust test suites, but were never added to
+murmur_spatial, murmur_angle, murmur_influencer, murmur_maxent_social, murmur_field,
+murmur_boid_state_machine) were registered in murmur_core's own registry and had real Rust test
+suites, but were never added to
 murmur_py's registry — there was no way to even construct a Simulation using any of them from
 Python. This file exists so that gap can't silently reopen: each plugin gets a small, real
 construct-and-run check, one per trait socket it fills. The five new `murmur_initializers`
@@ -341,3 +342,28 @@ def test_field_mode_runs_and_a_different_dt_changes_the_trajectory():
     assert np.all(np.isfinite(slow.positions()))
     assert np.all(np.isfinite(fast.positions()))
     assert not np.allclose(slow.positions(), fast.positions())
+
+
+def test_boid_state_machine_step_hook_caps_speed_of_a_densely_packed_flock():
+    sim = m.Simulation(
+        boid_count=150,
+        mode="pearce",
+        phi_p=0.50,
+        phi_a=0.20,
+        steric_enabled=True,
+        steric=0.6,
+        step_hooks=["boid_state_machine"],
+        isolated_max=1,
+        crowded_min=8,
+        crowded_speed_cap=0.5,
+        vision_radius=15.0,
+        init_radius=8.0,
+        cruise_speed=1.0,
+    )
+    sim.run_batch(60, 0)
+    assert np.all(np.isfinite(sim.positions()))
+    speeds = np.linalg.norm(sim.velocities(), axis=1)
+    assert np.all(np.isfinite(speeds))
+    # A tightly-packed flock (init_radius=8 << vision_radius=15) should have at least some
+    # boids capped below cruise_speed by the Crowded classification.
+    assert speeds.min() < 1.0 - 1e-6

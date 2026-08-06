@@ -20,7 +20,23 @@ pub trait SpeedModel: Send + Sync {
     /// Enforces this model's speed constraint on one boid's velocity in place, called during
     /// the sequential write phase after acceleration integration (design/01_core.md §8
     /// pipeline step 3). May reseed a stalled (near-zero-speed) boid via `rng`.
-    fn enforce(&self, vel: &mut Vec3, species: Species, params: &CoreParams, rng: &mut Rng);
+    ///
+    /// `cap_multiplier` fixes **G3** (roadmap.md §12): a multiplicative tightening of whatever
+    /// ceiling this model would otherwise use, gathered by the pipeline from every composed
+    /// `StepHook::speed_cap_multiplier()` (the most restrictive hook wins — combined via `min`)
+    /// before this call. `1.0` (no tightening) when no hook has an opinion — every existing
+    /// `SpeedModel` before `murmur_boid_state_machine` needed nothing here, so this costs
+    /// nothing for them beyond applying the identity multiplier. Deliberately narrows only the
+    /// *ceiling*, never the floor — "cap" is the word every source (this trait's own callers,
+    /// pymurmur's `boid_state_speed_mult`) uses for this, not "band."
+    fn enforce(
+        &self,
+        vel: &mut Vec3,
+        species: Species,
+        params: &CoreParams,
+        cap_multiplier: f64,
+        rng: &mut Rng,
+    );
     fn name(&self) -> &'static str;
 }
 
@@ -44,11 +60,21 @@ impl Default for BandSpeed {
 }
 
 impl SpeedModel for BandSpeed {
-    fn enforce(&self, vel: &mut Vec3, species: Species, params: &CoreParams, rng: &mut Rng) {
+    fn enforce(
+        &self,
+        vel: &mut Vec3,
+        species: Species,
+        params: &CoreParams,
+        cap_multiplier: f64,
+        rng: &mut Rng,
+    ) {
         let (vmax, vmin) = match species {
-            Species::Predator => (params.cruise_speed * self.predator_speed_factor, 0.0),
+            Species::Predator => (
+                params.cruise_speed * self.predator_speed_factor * cap_multiplier,
+                0.0,
+            ),
             Species::Prey | Species::Custom(_) => (
-                params.cruise_speed,
+                params.cruise_speed * cap_multiplier,
                 params.cruise_speed * params.speed_min_factor,
             ),
         };
@@ -104,7 +130,7 @@ mod tests {
         let p = params();
         let mut vel = Vec3::new(100.0, 0.0, 0.0);
         let mut rng = for_boid(1, 1, 1);
-        BandSpeed::default().enforce(&mut vel, Species::Prey, &p, &mut rng);
+        BandSpeed::default().enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert!((vel.len() - p.cruise_speed).abs() < 1e-9);
         assert!(vel.x > 0.0, "direction preserved");
     }
@@ -115,7 +141,7 @@ mod tests {
         let vmin = p.cruise_speed * p.speed_min_factor;
         let mut vel = Vec3::new(0.5, 0.0, 0.0); // below vmin=3.0, but not stalled
         let mut rng = for_boid(1, 1, 1);
-        BandSpeed::default().enforce(&mut vel, Species::Prey, &p, &mut rng);
+        BandSpeed::default().enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert!((vel.len() - vmin).abs() < 1e-9);
         assert!(vel.x > 0.0, "direction preserved");
     }
@@ -126,7 +152,7 @@ mod tests {
         let mut vel = Vec3::new(5.0, 0.0, 0.0); // within [3, 10]
         let mut rng = for_boid(1, 1, 1);
         let before = vel;
-        BandSpeed::default().enforce(&mut vel, Species::Prey, &p, &mut rng);
+        BandSpeed::default().enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert_eq!(vel, before);
     }
 
@@ -136,7 +162,7 @@ mod tests {
         let vmin = p.cruise_speed * p.speed_min_factor;
         let mut vel = Vec3::ZERO;
         let mut rng = for_boid(1, 1, 1);
-        BandSpeed::default().enforce(&mut vel, Species::Prey, &p, &mut rng);
+        BandSpeed::default().enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
         assert!(vel.is_finite());
         assert!((vel.len() - vmin).abs() < 1e-9);
     }
@@ -151,13 +177,37 @@ mod tests {
 
         // Overspeed predator clamps to 2*v0, not v0.
         let mut fast = Vec3::new(1000.0, 0.0, 0.0);
-        band.enforce(&mut fast, Species::Predator, &p, &mut rng);
+        band.enforce(&mut fast, Species::Predator, &p, 1.0, &mut rng);
         assert!((fast.len() - 2.0 * p.cruise_speed).abs() < 1e-9);
 
         // A slow (but not literally zero) predator is left alone — no unstall floor.
         let mut slow = Vec3::new(0.01, 0.0, 0.0);
-        band.enforce(&mut slow, Species::Predator, &p, &mut rng);
+        band.enforce(&mut slow, Species::Predator, &p, 1.0, &mut rng);
         assert_eq!(slow, Vec3::new(0.01, 0.0, 0.0));
+    }
+
+    /// G3 (roadmap.md §12): a `cap_multiplier` < 1.0 must genuinely tighten the ceiling below
+    /// the model's own `vmax`, not just be accepted and ignored.
+    #[test]
+    fn cap_multiplier_tightens_the_ceiling_below_the_models_own_vmax() {
+        let p = params();
+        let mut vel = Vec3::new(100.0, 0.0, 0.0);
+        let mut rng = for_boid(1, 1, 1);
+        BandSpeed::default().enforce(&mut vel, Species::Prey, &p, 0.5, &mut rng);
+        assert!(
+            (vel.len() - 0.5 * p.cruise_speed).abs() < 1e-9,
+            "expected speed capped at half cruise_speed, got {}",
+            vel.len()
+        );
+    }
+
+    #[test]
+    fn cap_multiplier_of_one_is_the_identity_matching_the_plain_cruise_speed_ceiling() {
+        let p = params();
+        let mut vel = Vec3::new(100.0, 0.0, 0.0);
+        let mut rng = for_boid(1, 1, 1);
+        BandSpeed::default().enforce(&mut vel, Species::Prey, &p, 1.0, &mut rng);
+        assert!((vel.len() - p.cruise_speed).abs() < 1e-9);
     }
 
     #[test]
@@ -179,7 +229,7 @@ mod tests {
         let p = params();
         let mut rng = for_boid(1, 1, 1);
         let mut vel = Vec3::new(1000.0, 0.0, 0.0);
-        model.enforce(&mut vel, Species::Predator, &p, &mut rng);
+        model.enforce(&mut vel, Species::Predator, &p, 1.0, &mut rng);
         assert!((vel.len() - 3.5 * p.cruise_speed).abs() < 1e-9);
     }
 }

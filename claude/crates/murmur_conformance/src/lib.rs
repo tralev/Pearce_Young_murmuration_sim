@@ -234,17 +234,26 @@ pub fn speed_model(model: &dyn SpeedModel) {
 
     for species in [Species::Prey, Species::Predator, Species::Custom(7)] {
         let mut stalled = Vec3::ZERO;
-        model.enforce(&mut stalled, species, &params, &mut rng);
+        model.enforce(&mut stalled, species, &params, 1.0, &mut rng);
         assert!(
             stalled.is_finite(),
             "SpeedModel::enforce must leave velocity finite even from a stall"
         );
 
         let mut overspeed = Vec3::new(1000.0, 0.0, 0.0);
-        model.enforce(&mut overspeed, species, &params, &mut rng);
+        model.enforce(&mut overspeed, species, &params, 1.0, &mut rng);
         assert!(
             overspeed.is_finite(),
             "SpeedModel::enforce must leave velocity finite for an overspeed boid"
+        );
+
+        // G3: any cap_multiplier (including a real tightening one, not just the identity) must
+        // still leave the result finite — a SpeedModel is free to ignore it, but not to break.
+        let mut tightly_capped = Vec3::new(1000.0, 0.0, 0.0);
+        model.enforce(&mut tightly_capped, species, &params, 0.01, &mut rng);
+        assert!(
+            tightly_capped.is_finite(),
+            "SpeedModel::enforce must leave velocity finite under a tight cap_multiplier"
         );
     }
 }
@@ -336,6 +345,17 @@ pub fn step_hook(hook: &mut dyn StepHook) {
         acc.is_finite(),
         "StepHook::post_steer must leave acc finite"
     );
+
+    // G3: whatever the hook's opinion is (or isn't), it must be a sane, positive multiplier —
+    // never zero, negative, NaN, or infinite, which `SpeedModel::enforce` has no obligation to
+    // guard against on the caller's behalf.
+    if let Some(m) = hook.speed_cap_multiplier(0) {
+        assert!(
+            m.is_finite() && m > 0.0,
+            "StepHook::speed_cap_multiplier must be finite and > 0 when Some, got {}",
+            m
+        );
+    }
 }
 
 #[cfg(test)]
@@ -488,10 +508,17 @@ mod self_test {
 
     struct GoodSpeedModel;
     impl SpeedModel for GoodSpeedModel {
-        fn enforce(&self, vel: &mut Vec3, _species: Species, params: &CoreParams, rng: &mut Rng) {
+        fn enforce(
+            &self,
+            vel: &mut Vec3,
+            _species: Species,
+            params: &CoreParams,
+            cap_multiplier: f64,
+            rng: &mut Rng,
+        ) {
             let s = vel.len();
             let (vmax, vmin) = (
-                params.cruise_speed,
+                params.cruise_speed * cap_multiplier,
                 params.cruise_speed * params.speed_min_factor,
             );
             *vel = if s > vmax {

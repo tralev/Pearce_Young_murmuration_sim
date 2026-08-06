@@ -533,6 +533,7 @@ mod tests {
             _vel: &mut Vec3,
             _species: Species,
             _params: &CoreParams,
+            _cap_multiplier: f64,
             _rng: &mut CoreRng,
         ) {
         }
