@@ -56,6 +56,8 @@ fn build_registry() -> Registry {
     murmur_margin_domain::register(&mut reg);
     murmur_sphere_domain::register(&mut reg);
     murmur_sphere_soft_domain::register(&mut reg);
+    murmur_ceiling_speed::register(&mut reg);
+    murmur_none_speed::register(&mut reg);
     reg
 }
 

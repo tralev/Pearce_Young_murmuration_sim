@@ -145,10 +145,11 @@ Only `murmur_ffi`'s iOS/Android cross-compile and the QEMU ARM runtime smoke rem
 this environment — `rustup` isn't installed here; see that crate's module doc. Track C (the
 deferred plugin catalogue) is partially built: `murmur_core::h2`'s Rust-native eigensolver path,
 `murmur_young`, `murmur_predator_fsm`, `murmur_spin_wave`, `murmur_external_field`,
-`murmur_torus_domain`, `murmur_kdtree_index`, `murmur_knn_selection`, `murmur_fixed_speed`, and
-the `Domain` catalogue's remaining occupants (`murmur_margin_domain`, `murmur_sphere_domain`,
-`murmur_sphere_soft_domain`) all exist, are tested, and are wired into `murmur_py`. Obstacles
-(SDF/CSG avoidance), ecology (predator/prey population dynamics beyond the FSM), and the
-remaining `SpatialIndex`/`NeighborSelection`/`Initializer` plugins named in `roadmap.md` Phase
-16 (`adaptive_index`, `hybrid_selection`, `ceiling_speed`/`none_speed` speed models, and
-pymurmur's remaining `Initializer` variants) are not built.
+`murmur_torus_domain`, `murmur_kdtree_index`, `murmur_knn_selection`, `murmur_fixed_speed`, the
+`Domain` catalogue's remaining occupants (`murmur_margin_domain`, `murmur_sphere_domain`,
+`murmur_sphere_soft_domain`), and the `SpeedModel` catalogue's remaining occupants
+(`murmur_ceiling_speed`, `murmur_none_speed`) all exist, are tested, and are wired into
+`murmur_py`. Obstacles (SDF/CSG avoidance), ecology (predator/prey population dynamics beyond
+the FSM), and the remaining `SpatialIndex`/`NeighborSelection`/`Initializer` plugins named in
+`roadmap.md` Phase 16 (`adaptive_index`, `hybrid_selection`, and pymurmur's remaining
+`Initializer` variants) are not built.

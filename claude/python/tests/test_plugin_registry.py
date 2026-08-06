@@ -2,11 +2,12 @@
 selectable and runnable from Python — not just built and tested in Rust. Several Track C
 Phase 13/14/15/16 plugins (murmur_spin_wave, murmur_external_field, murmur_torus_domain,
 murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed, murmur_predator_fsm,
-murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_domain) were
-registered in murmur_core's own registry and had real Rust test suites, but were never added to
-murmur_py's registry — there was no way to even construct a Simulation using any of them from
-Python. This file exists so that gap can't silently reopen: each plugin gets a small, real
-construct-and-run check, one per trait socket it fills.
+murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_domain,
+murmur_ceiling_speed, murmur_none_speed) were registered in murmur_core's own registry and had
+real Rust test suites, but were never added to murmur_py's registry — there was no way to even
+construct a Simulation using any of them from Python. This file exists so that gap can't
+silently reopen: each plugin gets a small, real construct-and-run check, one per trait socket it
+fills.
 """
 
 import numpy as np
@@ -155,3 +156,27 @@ def test_sphere_soft_domain_runs_and_stays_finite_without_a_hard_clamp():
     pos = sim.positions()
     assert np.all(np.isfinite(pos))
     assert np.all(np.isfinite(sim.velocities()))
+
+
+def test_ceiling_speed_caps_overspeed_but_never_boosts_underspeed():
+    sim = m.Simulation(
+        boid_count=60,
+        speed_model="ceiling_speed",
+        cruise_speed=2.0,
+        init_radius=15.0,
+    )
+    sim.run_batch(30, 0)
+    speeds = np.linalg.norm(sim.velocities(), axis=1)
+    assert np.all(np.isfinite(speeds))
+    assert np.all(speeds <= 2.0 + 1e-6)
+
+
+def test_none_speed_runs_with_no_enforcement_and_stays_finite():
+    sim = m.Simulation(
+        boid_count=60,
+        speed_model="none_speed",
+        init_radius=15.0,
+    )
+    sim.run_batch(30, 0)
+    assert np.all(np.isfinite(sim.velocities()))
+    assert np.all(np.isfinite(sim.positions()))
