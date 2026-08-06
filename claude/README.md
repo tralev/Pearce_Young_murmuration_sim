@@ -181,5 +181,10 @@ seasonal amplitude, deterministic predator presence, and a real coherence-gate p
 flock centroid) is also done — only its `predator_rate=0.296` default is empirically grounded
 (Goodenough et al. 2017's own reported figure, `sci/Birds of a feather flock together.pdf`, read
 directly); the dusk/seasonal curve shapes are disclosed as pymurmur's own smoothing choices, not
-claimed fits. Obstacles (SDF/CSG avoidance), `wander`, `ripple`, `dynamic_vision_range`,
+claimed fits. `murmur_dynamic_vision_range` (a flock-wide adaptive perception-radius feedback
+loop on average neighbour count, target defaulting to `6.5` — the midpoint of this project's own
+Y-a hard-gate figure, `m* ≈ 6–7`, Young et al. 2013) is done too — the first plugin to actually
+mutate `SimView::core_params` rather than only read it, verified end to end: a real densely-
+packed flock's own `vision_radius` measurably shrinks, and a real sparse flock's measurably
+grows, over a real `Simulation` run. Obstacles (SDF/CSG avoidance), `wander`, `ripple`,
 `neighbor_adaptive_speed`, and `speed_noise` are not built.

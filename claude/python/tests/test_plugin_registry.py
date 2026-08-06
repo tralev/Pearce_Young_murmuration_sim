@@ -5,7 +5,7 @@ murmur_kdtree_index, murmur_knn_selection, murmur_fixed_speed, murmur_predator_f
 murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_domain,
 murmur_ceiling_speed, murmur_none_speed, murmur_adaptive_index, murmur_hybrid_selection,
 murmur_spatial, murmur_angle, murmur_influencer, murmur_maxent_social, murmur_field,
-murmur_boid_state_machine, murmur_ecology) were registered in murmur_core's own registry and had real Rust test
+murmur_boid_state_machine, murmur_ecology, murmur_dynamic_vision_range) were registered in murmur_core's own registry and had real Rust test
 suites, but were never added to
 murmur_py's registry — there was no way to even construct a Simulation using any of them from
 Python. This file exists so that gap can't silently reopen: each plugin gets a small, real
@@ -393,3 +393,23 @@ def test_ecology_step_hook_coherence_gate_tightens_flock_spread_when_open():
     assert np.all(np.isfinite(gate_closed.positions()))
     assert np.all(np.isfinite(gate_open.positions()))
     assert r_max(gate_open) < r_max(gate_closed)
+
+
+def test_dynamic_vision_range_step_hook_shrinks_radius_for_a_densely_packed_flock():
+    sim = m.Simulation(
+        boid_count=200,
+        mode="pearce",
+        phi_p=0.50,
+        phi_a=0.20,
+        step_hooks=["dynamic_vision_range"],
+        vision_radius=10.0,
+        init_radius=5.0,
+        target_neighbor_count=1.0,
+        adapt_rate=0.3,
+        cruise_speed=1.0,
+    )
+    initial = sim.describe()["vision_radius"]
+    sim.run_batch(30, 3)
+    after = sim.describe()["vision_radius"]
+    assert np.isfinite(after) and after > 0.0
+    assert after < initial

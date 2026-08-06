@@ -167,6 +167,10 @@ class Simulation:
         temperature_amplitude: float = 8.0,
         temperature_phase_day: float = 15.0,
         coherence_strength: float = 0.3,
+        target_neighbor_count: float = 6.5,
+        adapt_rate: float = 0.1,
+        min_multiplier: float = 0.25,
+        max_multiplier: float = 4.0,
     ) -> None: ...
     def step(self, dt: float, seed: int) -> None: ...
     def run_batch(self, steps: int, seed: int) -> None: ...

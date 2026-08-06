@@ -1,0 +1,19 @@
+[package]
+name = "murmur_dynamic_vision_range"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Flock-wide adaptive perception-radius StepHook: a feedback loop on average neighbour count that grows/shrinks core_params.vision_radius toward a target (roadmap.md Phase 18, design/02_plugins.md pymurmur physics/extensions/dynamic_vision_range.py). Default target_neighbor_count reuses this project's own Y-a hard-gate figure (m* ~= 6-7, Young et al. 2013)."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }
+murmur_pearce = { path = "../murmur_pearce" }
+murmur_instant_response = { path = "../murmur_instant_response" }
+murmur_open_domain = { path = "../murmur_open_domain" }
+murmur_hash_grid = { path = "../murmur_hash_grid" }
+murmur_radius_gather = { path = "../murmur_radius_gather" }
+murmur_initializers = { path = "../murmur_initializers" }
+rayon = "1"

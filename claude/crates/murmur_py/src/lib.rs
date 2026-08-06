@@ -67,6 +67,7 @@ fn build_registry() -> Registry {
     murmur_field::register(&mut reg);
     murmur_boid_state_machine::register(&mut reg);
     murmur_ecology::register(&mut reg);
+    murmur_dynamic_vision_range::register(&mut reg);
     reg
 }
 
@@ -328,6 +329,10 @@ impl PySimulation {
         temperature_amplitude = 8.0,
         temperature_phase_day = 15.0,
         coherence_strength = 0.3,
+        target_neighbor_count = 6.5,
+        adapt_rate = 0.1,
+        min_multiplier = 0.25,
+        max_multiplier = 4.0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -460,6 +465,10 @@ impl PySimulation {
         temperature_amplitude: f64,
         temperature_phase_day: f64,
         coherence_strength: f64,
+        target_neighbor_count: f64,
+        adapt_rate: f64,
+        min_multiplier: f64,
+        max_multiplier: f64,
     ) -> PyResult<Self> {
         let core_params = CoreParams::builder()
             .cruise_speed(cruise_speed)
@@ -608,7 +617,11 @@ impl PySimulation {
             .with("temperature_mean", temperature_mean)
             .with("temperature_amplitude", temperature_amplitude)
             .with("temperature_phase_day", temperature_phase_day)
-            .with("coherence_strength", coherence_strength);
+            .with("coherence_strength", coherence_strength)
+            .with("target_neighbor_count", target_neighbor_count)
+            .with("adapt_rate", adapt_rate)
+            .with("min_multiplier", min_multiplier)
+            .with("max_multiplier", max_multiplier);
 
         let config = SimConfig {
             mode: mode.to_string(),
