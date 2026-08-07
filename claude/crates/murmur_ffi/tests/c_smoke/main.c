@@ -69,13 +69,18 @@ int main(void) {
         return 1;
     }
 
-    struct CCommand stride_cmd;
-    memset(&stride_cmd, 0, sizeof(stride_cmd));
-    stride_cmd.kind = CMD_SET_CHECKPOINT_STRIDE;
-    stride_cmd.stride = 5;
+    struct CCommand commands[2];
+    memset(commands, 0, sizeof(commands));
+    commands[0].kind = CMD_SET_CHECKPOINT_STRIDE;
+    commands[0].stride = 5;
+    /* CMD_SET_ENVIRONMENT's write direction (design/05_viz_contract.md §3): proves it reaches
+     * a real composed ecology plugin from real C, not just murmur_ffi's own Rust tests. */
+    commands[1].kind = CMD_SET_ENVIRONMENT;
+    commands[1].env_day = 100;
+    commands[1].env_hour = 10.0;
 
     struct MurmurCheckpointBuffer *buffer = NULL;
-    int32_t status = murmur_run_batch(sim, 15, 1, &stride_cmd, 1, &buffer);
+    int32_t status = murmur_run_batch(sim, 15, 1, commands, 2, &buffer);
     if (status != 0) {
         fprintf(stderr, "murmur_run_batch failed with status %d\n", status);
         return 1;
@@ -107,6 +112,13 @@ int main(void) {
     if (!cp.has_environment) {
         fprintf(stderr, "checkpoint has no environment -- ecology's own checkpoint field "
                         "didn't reach C\n");
+        return 1;
+    }
+    /* dt=1.0, hours_per_dt defaults to 0.5 -> 15 steps advance 7.5 hours past the injected
+     * day 100, hour 10.0 -> day 100, hour 17.5. */
+    if (cp.environment.day != 100 || cp.environment.hour < 17.0 || cp.environment.hour > 18.0) {
+        fprintf(stderr, "CMD_SET_ENVIRONMENT didn't reach ecology: day=%llu hour=%f\n",
+                (unsigned long long)cp.environment.day, cp.environment.hour);
         return 1;
     }
 

@@ -252,3 +252,46 @@ composition, the C smoke test, and a Python test, each deliberately setting a mi
 fully closed. What's still open: `Command::AddObstacle`/`RemoveObstacle`/`SetEnvironment`'s live
 write-routing, native H₂/`RequestMetric` routing (`consensus_degree`/`h2_result`), and G2
 (pairwise boid–boid collision) — no named plugin needs it yet.
+
+**`Command::SetEnvironment`'s write direction (2026-08-07, same day).** Picked as the
+best-scoped slice of the write-routing item above: `AddObstacle`/`RemoveObstacle` turned out to
+have a real, previously-undisclosed spec gap (design/05's own `ObstacleNode` checkpoint shape
+never assigns a placed obstacle a *stable* id — `parent` is a positional index into one
+checkpoint's own flat list, not a durable handle — so no real caller could ever construct a
+valid `RemoveObstacle{id}` even with the routing wired), so that stayed a no-op, disclosed rather
+than worked around. `SetEnvironment` has no such problem and is now fully wired.
+
+`Command::SetEnvironment` gained real fields (`day: u64`, `hour: f64` — it was field-less
+before, since nothing consumed it). `StepHook` gained two more default methods,
+`validate_command`/`apply_command`, matching every prior seam's own zero-cost-when-unused shape
+— `batch.rs::apply_commands` routes `SetEnvironment` generically to every composed hook's own
+`apply_command`, no plugin-name special-casing. `ecology`'s own `Ecology` is the one real
+handler, and needed a real design choice: its `EnvironmentState` (`day`/`hour`/...) is purely
+*derived* every `pre_step` from `step_count * dt`, never stored authoritatively, so directly
+overwriting a field would just get recomputed away on the very next step. Fixed with a
+persistent `time_offset_hours` field instead — `apply_command` solves for the offset that makes
+`compute()` read exactly the requested `day`/`hour` *right now*, then time keeps advancing
+naturally from that injected point on every later step, rather than freezing.
+
+Surfaced through both consumer surfaces: `murmur_ffi`'s `CCommand` gained `env_day`/`env_hour`
+fields (regenerated header); `murmur_py`'s `Command` gained a `set_environment(day, hour)`
+static constructor. Verified end-to-end at three layers: a real-`Simulation` Rust test
+(`murmur_ecology`'s own integration suite) using `run_batch_checked` and reading the resulting
+`Checkpoint`, the C smoke test issuing a real `CMD_SET_ENVIRONMENT` command and reading the
+result back through `murmur_checkpoint_buffer_get`, and a Python test doing the same through
+`Simulation.run_batch_checked`/`snapshot()`. A non-finite `hour` is rejected up front (design's
+own "genuinely malformed" class), proven at the Rust and Python layers both.
+
+**A build-artifact trap worth naming**, hit and resolved mid-pass: `murmur_ffi`'s own C smoke
+test (`tests/c_smoke.rs`) finds `libmurmur_ffi.dylib` on disk at a fixed path rather than
+depending on the crate through Cargo's normal dependency graph (it shells out to `cc` at test
+time) — so `cargo test -p murmur_ffi --test c_smoke` alone doesn't reliably rebuild that
+`.dylib` when only the *library* crate's own source changed and nothing in the test binary's own
+compilation unit references it. Every `CCommand` field/`Command` variant change in this pass was
+briefly, misleadingly "failing" against a stale pre-change `.dylib` before this was caught (via
+directly comparing the `.dylib`'s mtime against the edited source) — a real, disclosed gotcha
+for this specific test, not a code bug. `cargo build -p murmur_ffi` before `cargo test -p
+murmur_ffi --test c_smoke` sidesteps it.
+
+575 Rust tests (up from 569), 110 pytest tests (up from 108), clippy/fmt clean including
+`murmur_py`, C smoke test passing against a regenerated header (built fresh, per the note above).

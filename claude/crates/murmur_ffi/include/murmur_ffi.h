@@ -267,6 +267,11 @@ typedef struct CCommand {
   uint32_t stride;
   uint64_t seed;
   uint8_t has_seed;
+  /**
+   * `SetEnvironment` only — `Command::SetEnvironment`'s own `day`/`hour`.
+   */
+  uint64_t env_day;
+  double env_hour;
 } CCommand;
 
 /**

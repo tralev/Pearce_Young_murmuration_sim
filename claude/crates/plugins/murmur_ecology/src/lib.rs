@@ -42,21 +42,22 @@
 //! **`Checkpoint.environment` is now wired** (`checkpoint_scene_fields`, below) — an earlier
 //! pass left this out on purpose and disclosed it; a later whole-codebase audit flagged that
 //! disclosure as worth actually closing, since `EnvironmentState` was otherwise fully computed
-//! every step and simply never reached a `Checkpoint`. **Still deliberately out of scope**:
-//! `Command::SetEnvironment` (still a documented no-op in `batch.rs`) — that's the write
-//! direction (a host *pushing* a new time-of-day into a running simulation), a materially
-//! different, separate piece of work from the read direction this pass closes; and
-//! automatically spawning/despawning predator boids when `predator_active` flips — there is no
-//! live-mutable `predator_count` path today (composition is fixed at construction), so
-//! `predator_active` is a reported/testable signal here, not an actuator. A caller wanting a
-//! live predator injection already has `Command::AddPredator` via `run_batch_checked` to drive
-//! that externally.
+//! every step and simply never reached a `Checkpoint`. **`Command::SetEnvironment` is now wired
+//! too** (`apply_command`, below) — the write direction (a host *pushing* a new time-of-day
+//! into a running simulation). Since `day`/`hour` are purely *derived* here (recomputed from
+//! `step_count * dt` every `pre_step`, never stored authoritatively), "setting" them works via
+//! a persistent `time_offset_hours` rather than overwriting a field `pre_step` would just
+//! immediately recompute away. **Still deliberately out of scope**: automatically spawning/
+//! despawning predator boids when `predator_active` flips — there is no live-mutable
+//! `predator_count` path today (composition is fixed at construction), so `predator_active` is
+//! a reported/testable signal here, not an actuator. A caller wanting a live predator injection
+//! already has `Command::AddPredator` via `run_batch_checked` to drive that externally.
 
 use std::sync::Mutex;
 
 use murmur_core::{
-    BoidCtx, ConfigError, EnvironmentSnapshot, PluginParams, Registry, SceneCheckpointFields,
-    SimView, StepHook, Vec3, MIN_LEN2,
+    BoidCtx, Command, ConfigError, EnvironmentSnapshot, PluginParams, Registry,
+    SceneCheckpointFields, SimView, StepHook, Vec3, MIN_LEN2,
 };
 
 const GOLDEN: f64 = 0.618_033_988_749_895;
@@ -246,6 +247,13 @@ impl EcologyParamsBuilder {
 pub struct Ecology {
     pub params: EcologyParams,
     state: Mutex<(EnvironmentState, Vec3)>, // (environment, cached flock centroid)
+    /// Set by `Command::SetEnvironment` (design/05 §3) — added to every future `compute()`
+    /// call's own `step_count * dt`-derived elapsed hours. `day`/`hour` are purely *derived*
+    /// state here (recomputed from scratch every `pre_step`, not stored authoritatively), so
+    /// there's no field to just overwrite — the next `pre_step` would immediately recompute it
+    /// away. A persistent offset is what makes "jump to day X, hour Y" actually stick across
+    /// subsequent steps, still advancing naturally from the injected point rather than freezing.
+    time_offset_hours: f64,
 }
 
 impl Ecology {
@@ -253,6 +261,7 @@ impl Ecology {
         Ecology {
             params,
             state: Mutex::new((EnvironmentState::default(), Vec3::ZERO)),
+            time_offset_hours: 0.0,
         }
     }
 
@@ -271,7 +280,7 @@ impl Ecology {
     }
 
     fn compute(&self, t: f64) -> EnvironmentState {
-        let total_hours = t * self.params.hours_per_dt;
+        let total_hours = t * self.params.hours_per_dt + self.time_offset_hours;
         let day = (total_hours / 24.0).floor() as u64;
         let hour = total_hours.rem_euclid(24.0);
 
@@ -364,6 +373,19 @@ impl StepHook for Ecology {
 
     fn name(&self) -> &'static str {
         "ecology"
+    }
+
+    /// `Command::SetEnvironment { day, hour }` (design/05 §3) — solves for the
+    /// `time_offset_hours` that makes `compute()` read exactly `day`/`hour` *right now*
+    /// (`step_count`/`dt` are "now," passed in by `batch.rs::apply_commands`), then lets time
+    /// keep advancing naturally from that injected point on every subsequent step. Any other
+    /// `Command` isn't ecology's to handle — left untouched.
+    fn apply_command(&mut self, cmd: &Command, step_count: u64, dt: f64) {
+        if let Command::SetEnvironment { day, hour } = cmd {
+            let desired_total_hours = *day as f64 * 24.0 + hour;
+            let natural_total_hours_now = step_count as f64 * dt * self.params.hours_per_dt;
+            self.time_offset_hours = desired_total_hours - natural_total_hours_now;
+        }
     }
 }
 
@@ -643,6 +665,54 @@ mod tests {
         let mut acc = Vec3::ZERO;
         hook.post_steer(ctx, &mut acc, &mut murmur_core::rng::for_boid(1, 2, 3));
         assert_eq!(acc, Vec3::ZERO);
+    }
+
+    #[test]
+    fn apply_command_makes_the_next_pre_step_read_the_requested_day_and_hour() {
+        let mut hook = Ecology::new(EcologyParams::builder().hours_per_dt(1.0).build().unwrap());
+        hook.apply_command(&Command::SetEnvironment { day: 5, hour: 12.0 }, 0, 1.0);
+
+        let boids = BoidColumns::with_capacity(0);
+        let mut params = core_params(1.0);
+        let mut view = SimView {
+            boids: &boids,
+            core_params: &mut params,
+            step_count: 0,
+        };
+        hook.pre_step(&mut view);
+
+        let env = hook.environment();
+        assert_eq!(env.day, 5);
+        assert!((env.hour - 12.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn apply_command_offset_keeps_advancing_naturally_on_later_steps() {
+        let mut hook = Ecology::new(EcologyParams::builder().hours_per_dt(1.0).build().unwrap());
+        // Jump to day 5, hour 12 "now" (step_count=10, dt=1.0 -> natural elapsed = 10 hours).
+        hook.apply_command(&Command::SetEnvironment { day: 5, hour: 12.0 }, 10, 1.0);
+
+        let boids = BoidColumns::with_capacity(0);
+        let mut params = core_params(1.0);
+
+        // 3 steps later (step_count=13): 3 more simulated hours should have passed on top of
+        // the injected day 5, hour 12 -> day 5, hour 15.
+        let mut view = SimView {
+            boids: &boids,
+            core_params: &mut params,
+            step_count: 13,
+        };
+        hook.pre_step(&mut view);
+        let env = hook.environment();
+        assert_eq!(env.day, 5);
+        assert!((env.hour - 15.0).abs() < 1e-9, "got hour={}", env.hour);
+    }
+
+    #[test]
+    fn apply_command_ignores_commands_that_are_not_set_environment() {
+        let mut hook = Ecology::new(EcologyParams::builder().hours_per_dt(1.0).build().unwrap());
+        hook.apply_command(&Command::SetCheckpointStride { stride: 7 }, 0, 1.0);
+        assert_eq!(hook.time_offset_hours, 0.0);
     }
 
     #[test]

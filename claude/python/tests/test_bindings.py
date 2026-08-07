@@ -204,6 +204,40 @@ def test_describe_reports_the_default_plugin_selection():
     assert desc["boid_count"] == 10
 
 
+def test_set_environment_command_jumps_the_composed_ecology_plugin_to_the_requested_day_and_hour():
+    # design/05_viz_contract.md §3's SetEnvironment write direction, exercised through the real
+    # Command queue -- proves it reaches a real composed ecology plugin from Python, not just
+    # murmur_core's own Rust tests / murmur_ffi's C round trip.
+    sim = m.Simulation(
+        boid_count=10,
+        mode="pearce",
+        step_hooks=["ecology"],
+        vision_radius=10.0,
+        init_radius=8.0,
+        init_seed=1,
+        dt=0.0,  # nothing would move day/hour on its own without the command
+    )
+    sim.run_batch_checked(1, 1, [m.Command.set_environment(12, 6.0)])
+    snap = sim.snapshot()
+    env = snap.scene["environment"]
+    assert env is not None
+    assert env["day"] == 12
+    assert abs(env["hour"] - 6.0) < 1e-6
+
+
+def test_set_environment_command_with_a_non_finite_hour_raises_value_error():
+    sim = m.Simulation(
+        boid_count=10,
+        mode="pearce",
+        step_hooks=["ecology"],
+        vision_radius=10.0,
+        init_radius=8.0,
+        init_seed=1,
+    )
+    with pytest.raises(ValueError):
+        sim.run_batch_checked(1, 1, [m.Command.set_environment(0, float("nan"))])
+
+
 def test_warnings_is_empty_when_cell_size_already_matches_vision_radius():
     sim = make_sim(10)
     assert sim.warnings() == []

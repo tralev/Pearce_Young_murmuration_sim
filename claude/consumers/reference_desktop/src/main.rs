@@ -276,6 +276,8 @@ fn main() -> ExitCode {
             stride: args.stride,
             seed: 0,
             has_seed: 0,
+            env_day: 0,
+            env_hour: 0.0,
         }];
         let mut buffer1: *mut MurmurCheckpointBuffer = ptr::null_mut();
         let status = murmur_run_batch(
@@ -332,6 +334,8 @@ fn main() -> ExitCode {
             stride: 0,
             seed: 0,
             has_seed: 0,
+            env_day: 0,
+            env_hour: 0.0,
         }];
         let mut buffer2: *mut MurmurCheckpointBuffer = ptr::null_mut();
         let status = murmur_run_batch(

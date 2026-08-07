@@ -475,6 +475,9 @@ pub struct CCommand {
     pub stride: u32,
     pub seed: u64,
     pub has_seed: u8,
+    /// `SetEnvironment` only — `Command::SetEnvironment`'s own `day`/`hour`.
+    pub env_day: u64,
+    pub env_hour: f64,
 }
 
 /// # Safety
@@ -502,7 +505,10 @@ unsafe fn decode_commands(ptr: *const CCommand, len: usize) -> Result<Vec<Comman
                 name: cstr_to_string(c.name).map_err(|e| format!("command {i}: {e}"))?,
                 value: c.value,
             },
-            CMD_SET_ENVIRONMENT => Command::SetEnvironment,
+            CMD_SET_ENVIRONMENT => Command::SetEnvironment {
+                day: c.env_day,
+                hour: c.env_hour,
+            },
             CMD_RESET => Command::Reset {
                 count: c.count,
                 seed: if c.has_seed != 0 { Some(c.seed) } else { None },
@@ -1218,6 +1224,8 @@ mod tests {
                 stride: 5,
                 seed: 0,
                 has_seed: 0,
+                env_day: 0,
+                env_hour: 0.0,
             }];
             let status = murmur_run_batch(
                 sim,
@@ -1271,6 +1279,8 @@ mod tests {
                 stride: 0,
                 seed: 0,
                 has_seed: 0,
+                env_day: 0,
+                env_hour: 0.0,
             }];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
             let status = murmur_run_batch(
@@ -1411,6 +1421,8 @@ mod tests {
                     stride: 0,
                     seed: 42,
                     has_seed: 1,
+                    env_day: 0,
+                    env_hour: 0.0,
                 },
                 CCommand {
                     kind: CMD_ADD_PREDATOR,
@@ -1431,6 +1443,8 @@ mod tests {
                     stride: 0,
                     seed: 0,
                     has_seed: 0,
+                    env_day: 0,
+                    env_hour: 0.0,
                 },
             ];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
@@ -1447,6 +1461,69 @@ mod tests {
 
             let cp0 = murmur_checkpoint_buffer_get(out_buffer, 0);
             assert_eq!(cp0.predator_count, 1);
+
+            murmur_checkpoint_buffer_destroy(out_buffer);
+            murmur_destroy(sim);
+        }
+    }
+
+    /// `CMD_SET_ENVIRONMENT`'s write direction, round-tripped through the real C encoding: a
+    /// composed `ecology` plugin's `day`/`hour` genuinely jump to the requested values, visible
+    /// in the resulting `CCheckpoint`.
+    #[test]
+    fn set_environment_command_round_trips_through_the_c_encoding() {
+        unsafe {
+            let strings = default_config_strings();
+            let mut config = default_config(&strings, 5);
+            config.dt = 0.0; // nothing would move day/hour on its own without the command
+            let hook = c_str("ecology");
+            let hooks = [hook.as_ptr()];
+            config.step_hooks = hooks.as_ptr();
+            config.step_hooks_len = 1;
+            let sim = murmur_create(&config);
+            assert!(
+                !sim.is_null(),
+                "{:?}",
+                CStr::from_ptr(murmur_last_error_message())
+            );
+
+            let commands = [CCommand {
+                kind: CMD_SET_ENVIRONMENT,
+                position: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                velocity: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                id: 0,
+                name: ptr::null(),
+                value: 0.0,
+                count: 0,
+                stride: 0,
+                seed: 0,
+                has_seed: 0,
+                env_day: 9,
+                env_hour: 14.5,
+            }];
+            let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
+            let status = murmur_run_batch(
+                sim,
+                1,
+                1,
+                commands.as_ptr(),
+                commands.len(),
+                &mut out_buffer,
+            );
+            assert_eq!(status, 0);
+
+            let cp0 = murmur_checkpoint_buffer_get(out_buffer, 0);
+            assert_eq!(cp0.has_environment, 1);
+            assert_eq!(cp0.environment.day, 9);
+            assert!((cp0.environment.hour - 14.5).abs() < 1e-6);
 
             murmur_checkpoint_buffer_destroy(out_buffer);
             murmur_destroy(sim);
@@ -1492,6 +1569,8 @@ mod tests {
                 stride: 0,
                 seed: 0,
                 has_seed: 0,
+                env_day: 0,
+                env_hour: 0.0,
             }];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
             let status = murmur_run_batch(

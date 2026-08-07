@@ -1,6 +1,7 @@
 //! `StepHook` — the single, minimal seam deferred feature-plugins (ecology, obstacles,
 //! predator–prey, behaviours) attach to (design/02_plugins.md §5).
 
+use crate::batch::Command;
 use crate::boids::BoidColumns;
 use crate::math::Vec3;
 use crate::modes::BoidCtx;
@@ -231,4 +232,27 @@ pub trait StepHook: Send + Sync {
     fn checkpoint_scene_fields(&self) -> SceneCheckpointFields {
         SceneCheckpointFields::default()
     }
+
+    /// Read-only precondition check for a `Command` this hook might be the intended target of
+    /// (design/05_viz_contract.md §3's `SetEnvironment`/`AddObstacle`/`RemoveObstacle`), called
+    /// by `batch.rs::validate_commands` **before** anything in the queue mutates. `Some(reason)`
+    /// rejects the whole queue (design's own "genuinely malformed commands... rejected before
+    /// any step executes" rule — a bad command never partially applies); `None` covers both
+    /// "this hook accepts it" and "this hook isn't the intended target" — a command whose
+    /// target plugin isn't composed at all is a legitimate no-op per design, not a validation
+    /// error, so the caller can't (and doesn't need to) tell those two apart from this alone.
+    /// Default: never rejects.
+    fn validate_command(&self, _cmd: &Command) -> Option<String> {
+        None
+    }
+
+    /// Applies a `Command` this hook recognizes as its own, mutating its own live state
+    /// (`batch.rs::apply_commands`, always called only after every hook's own
+    /// `validate_command` already passed). `step_count`/`dt` are the values in effect right
+    /// now, between batches — a command like "jump to day X, hour Y" needs to know "now" in the
+    /// same simulated-time terms `pre_step` itself uses. A hook that isn't `cmd`'s intended
+    /// target (including every hook when `cmd` doesn't target any `StepHook` at all, e.g.
+    /// `SetParam`) simply does nothing. Default no-op, matching every other lazily-added seam's
+    /// own zero-cost-when-unused shape (D22b).
+    fn apply_command(&mut self, _cmd: &Command, _step_count: u64, _dt: f64) {}
 }

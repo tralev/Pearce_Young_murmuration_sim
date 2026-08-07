@@ -12,13 +12,15 @@
 //! `obstacles`, `wander`, `ripple`, `dynamic_vision_range`) are now wired too, generically via
 //! `StepHook::checkpoint_boid_fields`/`checkpoint_scene_fields` (step_hook.rs) — `murmur_core`
 //! never references a specific plugin by name to do this; each hook opts in on its own.
-//! `AddObstacle`/`SetEnvironment`/`RequestMetric` (native H₂/`DensityScaling`/`ShapePCA`/
-//! `TauRho`) and `consensus_degree`/`h2_result` remain documented no-ops/omitted fields — no
-//! command-routing path exists yet to mutate a composed `obstacles`/`ecology` plugin's live
-//! state via the queue (only Python's direct plugin-param construction can configure them
-//! today), and no native H₂-on-checkpoint path exists yet either. Both are real, disclosed,
-//! separately-scoped follow-ups, not this pass's job — same "fix lazily" practice as
-//! roadmap.md's G1–G8.
+//! `SetEnvironment`'s write direction is now wired too, generically via
+//! `StepHook::validate_command`/`apply_command` (`ecology`'s own implementation is the one real
+//! handler — see `Command`'s own doc for why it needed a persistent time-offset, not a direct
+//! field overwrite). `AddObstacle`/`RequestMetric` (native H₂/`DensityScaling`/`ShapePCA`/
+//! `TauRho`) and `consensus_degree`/`h2_result` remain documented no-ops/omitted fields —
+//! `AddObstacle`/`RemoveObstacle` need a stable obstacle-id scheme in the checkpoint schema
+//! first (see `Command`'s own doc), and no native H₂-on-checkpoint path exists yet either. Both
+//! are real, disclosed, separately-scoped follow-ups, not this pass's job — same "fix lazily"
+//! practice as roadmap.md's G1–G8.
 
 use crate::boids::Species;
 use crate::math::Vec3;
@@ -95,11 +97,19 @@ pub struct CheckpointBuffer {
 
 /// design/05_viz_contract.md §3. Every variant maps to a documented behaviour even when its
 /// target plugin isn't part of the current composition — the design's own "no-op, not error"
-/// rule. `obstacles`/`ecology` are real, built plugins now (Track C Phase 18), but no
-/// command-routing path exists yet to mutate either one's *live* state through this queue —
-/// `AddObstacle`/`RemoveObstacle`/`SetEnvironment` are still always a no-op today, a real,
-/// disclosed, separately-scoped follow-up, not the "plugin doesn't exist" reason this said
-/// before those plugins were built.
+/// rule. `SetEnvironment`'s write direction is wired (routed generically through
+/// `StepHook::validate_command`/`apply_command`, `ecology`'s own implementation) — `ecology`'s
+/// own `EnvironmentState` is otherwise purely *derived* each step from `step_count * dt`, so
+/// `SetEnvironment` works by setting a persistent time offset, not overwriting a field that
+/// `pre_step` would just immediately recompute away.
+///
+/// `AddObstacle`/`RemoveObstacle` remain a no-op — a real, newly-disclosed gap, not the
+/// original "plugin doesn't exist" reason: design/05 §2.2's own `ObstacleNode` checkpoint shape
+/// (`{primitive, csg_op, parent}`) never assigns a *stable* id to a placed obstacle (`parent`
+/// is a positional index into that one checkpoint's own flat list, not a durable handle), so no
+/// real caller can ever construct a valid `RemoveObstacle{id}` or a `parent`-referencing
+/// `AddObstacle` today — the schema itself would need a stable id field before this write
+/// direction is meaningfully drivable, a separately-scoped follow-up.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     AddPredator {
@@ -110,10 +120,10 @@ pub enum Command {
         id: u32,
     },
     /// No live command-routing path into a composed `obstacles` plugin's scene yet — always a
-    /// no-op (see the enum's own doc).
+    /// no-op (see the enum's own doc: no stable obstacle id exists to route through).
     AddObstacle,
     /// No live command-routing path into a composed `obstacles` plugin's scene yet — always a
-    /// no-op (see the enum's own doc).
+    /// no-op (see the enum's own doc: no stable obstacle id exists to route through).
     RemoveObstacle {
         id: u32,
     },
@@ -121,9 +131,13 @@ pub enum Command {
         name: String,
         value: f64,
     },
-    /// No live command-routing path into a composed `ecology` plugin yet — always a no-op (see
-    /// the enum's own doc).
-    SetEnvironment,
+    /// Routed generically to every composed `StepHook`'s own `validate_command`/`apply_command`
+    /// — `ecology`'s own implementation is the one real handler (see the enum's own doc). A
+    /// no-op if `ecology` isn't composed (design/05 §3's own "target not composed" rule).
+    SetEnvironment {
+        day: u64,
+        hour: f64,
+    },
     Reset {
         count: u32,
         seed: Option<u64>,
@@ -255,10 +269,18 @@ impl Simulation {
                         None
                     }
                 }
+                Command::SetEnvironment { hour, .. } => {
+                    if !hour.is_finite() {
+                        Some("hour must be finite".to_string())
+                    } else {
+                        self.step_hooks
+                            .iter()
+                            .find_map(|h| h.validate_command(command))
+                    }
+                }
                 Command::RemovePredator { .. }
                 | Command::AddObstacle
                 | Command::RemoveObstacle { .. }
-                | Command::SetEnvironment
                 | Command::Reset { .. }
                 | Command::RequestMetric => None,
             };
@@ -296,9 +318,19 @@ impl Simulation {
                         self.boids.remove(id);
                     }
                 }
-                Command::AddObstacle | Command::RemoveObstacle { .. } | Command::SetEnvironment => {
-                    // No live command-routing path into a composed obstacles/ecology
-                    // plugin's own state yet (see the enum's own doc) — always a no-op.
+                Command::AddObstacle | Command::RemoveObstacle { .. } => {
+                    // No live command-routing path into a composed obstacles plugin's own
+                    // state yet (see the enum's own doc: no stable obstacle id exists to
+                    // route through) — always a no-op.
+                }
+                Command::SetEnvironment { day, hour } => {
+                    // Routed generically to every composed StepHook's own apply_command
+                    // (ecology's own implementation is the one real handler) — a no-op if
+                    // ecology isn't composed, matching design/05 §3's own rule.
+                    let cmd = Command::SetEnvironment { day, hour };
+                    for hook in &mut self.step_hooks {
+                        hook.apply_command(&cmd, self.step_count, self.core_params.dt);
+                    }
                 }
                 Command::SetParam { name, value } => {
                     apply_core_param(&mut self.core_params, &name, value);

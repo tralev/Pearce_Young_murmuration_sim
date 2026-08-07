@@ -4,7 +4,7 @@
 //! (dusk, in season) versus when it's closed (out of season) — not just correct in an isolated
 //! `post_steer` call.
 
-use murmur_core::{CoreParams, PluginParams, Registry, SimConfig, Simulation};
+use murmur_core::{Command, CoreParams, PluginParams, Registry, SimConfig, Simulation};
 
 fn build_registry() -> Registry {
     let mut reg = Registry::new();
@@ -119,6 +119,41 @@ fn a_strong_coherence_gate_measurably_tightens_the_flocks_own_spread() {
         r_max_gate_open,
         r_max_with_gate_closed
     );
+}
+
+/// design/05_viz_contract.md §3's `SetEnvironment` write direction, exercised end-to-end
+/// through the real `Command` queue (`run_batch_checked`), not just `murmur_ecology`'s own
+/// unit-level `apply_command` test — proves `batch.rs`'s generic StepHook dispatch genuinely
+/// reaches a real composed `ecology` plugin, and that the injected day/hour reaches a real
+/// `Checkpoint`.
+#[test]
+fn set_environment_command_jumps_the_composed_ecology_plugin_to_the_requested_day_and_hour() {
+    let mut sim = build_sim(20, 1, 0.0, 0.0); // hours_per_dt=0 -> would never move on its own
+    let buffer = sim
+        .run_batch_checked(1, 1, vec![Command::SetEnvironment { day: 12, hour: 6.0 }])
+        .unwrap();
+    let env = buffer.checkpoints[0]
+        .scene_fields
+        .environment
+        .expect("ecology always publishes an environment");
+    assert_eq!(env.day, 12);
+    assert!((env.hour - 6.0).abs() < 1e-6, "got hour={}", env.hour);
+}
+
+/// A non-finite `hour` is genuinely malformed (design/05 §3's own "out-of-range value" class),
+/// rejected before anything applies — not silently clamped or ignored.
+#[test]
+fn set_environment_command_with_a_non_finite_hour_is_rejected() {
+    let mut sim = build_sim(20, 1, 0.0, 0.0);
+    let result = sim.run_batch_checked(
+        1,
+        1,
+        vec![Command::SetEnvironment {
+            day: 0,
+            hour: f64::NAN,
+        }],
+    );
+    assert!(result.is_err(), "expected a non-finite hour to be rejected");
 }
 
 #[test]

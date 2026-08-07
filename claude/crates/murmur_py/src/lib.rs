@@ -168,16 +168,19 @@ struct PySnapshot {
 /// Python — Track B's atomic command-queue contract, previously only reachable from Rust/C
 /// (`murmur_ffi`)/the `reference_desktop` consumer. Only the variants with a real behaviour
 /// behind them today are exposed (`AddPredator`, `RemovePredator`, `SetParam`, `Reset`,
-/// `SetCheckpointStride`) — `AddObstacle`/`RemoveObstacle`/`SetEnvironment`/`RequestMetric` are
-/// documented no-ops in Rust too. `obstacles`/`ecology` are real, built plugins now (their own
-/// *published* state reaches Python via `Snapshot.scene`, see `PySnapshot` above) — what's
-/// still missing is a live command-routing path to *mutate* either one's state through this
-/// queue, a real, disclosed, separately-scoped follow-up (`batch.rs`'s own module doc), not the
-/// "plugin doesn't exist" reason this said before those plugins were built. Adding Python
-/// constructors for commands that still can't do anything would be misleading, not useful.
-/// `SetParam` only reaches `CoreParams`' live-mutable subset (`cruise_speed`, `max_force`,
-/// `speed_min_factor`, `dt`, `vision_radius`) — plugin-private params (`phi_p`, `field_strength`,
-/// ...) are baked in at construction with no live-mutation path (`batch.rs`'s own module doc).
+/// `SetCheckpointStride`, `SetEnvironment`) — `AddObstacle`/`RemoveObstacle`/`RequestMetric` are
+/// still documented no-ops in Rust too. `obstacles`'s own *published* state reaches Python via
+/// `Snapshot.scene` (see `PySnapshot` above) — what's still missing for it is a live
+/// command-routing path to *mutate* that state through this queue: design/05's own
+/// `ObstacleNode` checkpoint shape never assigns a stable id to a placed obstacle, so no real
+/// caller could construct a valid `RemoveObstacle{id}` today even if the routing existed
+/// (`batch.rs`'s own module doc has the full explanation) — a real, disclosed, separately-scoped
+/// follow-up, not the "plugin doesn't exist" reason this said before `obstacles` was built.
+/// Adding a Python constructor for a command that still can't do anything would be misleading,
+/// not useful. `SetParam` only reaches `CoreParams`' live-mutable subset (`cruise_speed`,
+/// `max_force`, `speed_min_factor`, `dt`, `vision_radius`) — plugin-private params (`phi_p`,
+/// `field_strength`, ...) are baked in at construction with no live-mutation path (`batch.rs`'s
+/// own module doc).
 #[pyclass(name = "Command")]
 #[derive(Clone)]
 struct PyCommand {
@@ -222,6 +225,16 @@ impl PyCommand {
     fn set_checkpoint_stride(stride: u32) -> Self {
         PyCommand {
             inner: Command::SetCheckpointStride { stride },
+        }
+    }
+
+    /// Jumps a composed `ecology` plugin's own clock to `day`/`hour` (design/05 §3) — a no-op
+    /// if `ecology` isn't part of this simulation's composition. `hour` must be finite (rejected
+    /// at `run_batch_checked` otherwise, same as every other genuinely malformed command).
+    #[staticmethod]
+    fn set_environment(day: u64, hour: f64) -> Self {
+        PyCommand {
+            inner: Command::SetEnvironment { day, hour },
         }
     }
 }
