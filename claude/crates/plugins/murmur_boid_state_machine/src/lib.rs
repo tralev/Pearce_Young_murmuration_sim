@@ -47,7 +47,9 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use murmur_core::{BoidCtx, ConfigError, PluginParams, Registry, StepHook, Vec3};
+use murmur_core::{
+    BoidCheckpointFields, BoidCtx, ConfigError, PluginParams, Registry, StepHook, Vec3,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoidState {
@@ -55,6 +57,19 @@ pub enum BoidState {
     Isolated,
     Crowded,
     Threatened,
+}
+
+impl BoidState {
+    /// design/05_viz_contract.md §2.1's own literal encoding for `state`:
+    /// "`Option<u8>` (Normal/Isolated/Crowded/Threatened)" — this enum's own declaration order.
+    fn as_checkpoint_u8(self) -> u8 {
+        match self {
+            BoidState::Normal => 0,
+            BoidState::Isolated => 1,
+            BoidState::Crowded => 2,
+            BoidState::Threatened => 3,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -185,6 +200,17 @@ impl StepHook for BoidStateMachine {
         match self.state_of(index) {
             Some(BoidState::Crowded) => Some(self.params.crowded_speed_cap),
             _ => None,
+        }
+    }
+
+    /// design/05_viz_contract.md §2.1's `state`/`speed_mult` — `speed_mult` mirrors
+    /// `speed_cap_multiplier`'s own answer exactly (`None` when Crowded doesn't apply, same as
+    /// that method), rather than duplicating the classification logic.
+    fn checkpoint_boid_fields(&self, index: u32) -> BoidCheckpointFields {
+        BoidCheckpointFields {
+            state: self.state_of(index).map(BoidState::as_checkpoint_u8),
+            speed_mult: self.speed_cap_multiplier(index).map(|m| m as f32),
+            ..Default::default()
         }
     }
 
@@ -394,6 +420,53 @@ mod tests {
             hook.speed_cap_multiplier(0),
             Some(0.6),
             "Crowded must tighten to crowded_speed_cap"
+        );
+    }
+
+    #[test]
+    fn checkpoint_boid_fields_publishes_state_and_matches_speed_cap_multiplier() {
+        let hook = BoidStateMachine::new(
+            BoidStateMachineParams::builder()
+                .isolated_max(1)
+                .crowded_min(5)
+                .crowded_speed_cap(0.6)
+                .build()
+                .unwrap(),
+        );
+        let params = core_params();
+        let domain = StubDomain;
+        let mut acc = Vec3::ZERO;
+
+        let crowded_n = neighbors(10);
+        hook.post_steer(
+            ctx(Vec3::new(0.5, 0.0, 0.0), &crowded_n, &params, &domain),
+            &mut acc,
+            &mut test_rng(),
+        );
+        let fields = hook.checkpoint_boid_fields(0);
+        assert_eq!(fields.state, Some(BoidState::Crowded.as_checkpoint_u8()));
+        assert_eq!(fields.speed_mult, Some(0.6));
+
+        let isolated_n = neighbors(0);
+        hook.post_steer(
+            ctx(Vec3::new(0.5, 0.0, 0.0), &isolated_n, &params, &domain),
+            &mut acc,
+            &mut test_rng(),
+        );
+        let fields = hook.checkpoint_boid_fields(0);
+        assert_eq!(fields.state, Some(BoidState::Isolated.as_checkpoint_u8()));
+        assert_eq!(
+            fields.speed_mult, None,
+            "Isolated must not carry a speed_mult"
+        );
+    }
+
+    #[test]
+    fn checkpoint_boid_fields_of_an_unseen_boid_is_all_none() {
+        let hook = BoidStateMachine::new(BoidStateMachineParams::builder().build().unwrap());
+        assert_eq!(
+            hook.checkpoint_boid_fields(42),
+            BoidCheckpointFields::default()
         );
     }
 

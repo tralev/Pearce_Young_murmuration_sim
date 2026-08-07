@@ -39,20 +39,24 @@
 //! during dusk *and* murmuration season, `0.0` otherwise — literally gating how strongly
 //! murmuration-like coherence is encouraged, tied to time of day/season.
 //!
-//! **Deliberately out of scope for this pass**, disclosed rather than silently implied:
-//! wiring this plugin's `EnvironmentState` into `batch.rs`'s `Command::SetEnvironment`/
-//! `Checkpoint.environment` (both still documented no-ops there, design/05_viz_contract.md §2/
-//! §3) — a separate Track B-shaped follow-up, not attempted here; and automatically spawning/
-//! despawning predator boids when `predator_active` flips — there is no live-mutable
-//! `predator_count` path today (composition is fixed at construction), so `predator_active` is
-//! a reported/testable signal here, not an actuator. A caller wanting a live predator
-//! injection already has `Command::AddPredator` via `run_batch_checked` to drive that
-//! externally.
+//! **`Checkpoint.environment` is now wired** (`checkpoint_scene_fields`, below) — an earlier
+//! pass left this out on purpose and disclosed it; a later whole-codebase audit flagged that
+//! disclosure as worth actually closing, since `EnvironmentState` was otherwise fully computed
+//! every step and simply never reached a `Checkpoint`. **Still deliberately out of scope**:
+//! `Command::SetEnvironment` (still a documented no-op in `batch.rs`) — that's the write
+//! direction (a host *pushing* a new time-of-day into a running simulation), a materially
+//! different, separate piece of work from the read direction this pass closes; and
+//! automatically spawning/despawning predator boids when `predator_active` flips — there is no
+//! live-mutable `predator_count` path today (composition is fixed at construction), so
+//! `predator_active` is a reported/testable signal here, not an actuator. A caller wanting a
+//! live predator injection already has `Command::AddPredator` via `run_batch_checked` to drive
+//! that externally.
 
 use std::sync::Mutex;
 
 use murmur_core::{
-    BoidCtx, ConfigError, PluginParams, Registry, SimView, StepHook, Vec3, MIN_LEN2,
+    BoidCtx, ConfigError, EnvironmentSnapshot, PluginParams, Registry, SceneCheckpointFields,
+    SimView, StepHook, Vec3, MIN_LEN2,
 };
 
 const GOLDEN: f64 = 0.618_033_988_749_895;
@@ -339,6 +343,25 @@ impl StepHook for Ecology {
         }
     }
 
+    /// design/05_viz_contract.md §2.2's `environment` — the same `environment()` accessor,
+    /// now also published through the generic `StepHook` checkpoint-field seam.
+    fn checkpoint_scene_fields(&self) -> SceneCheckpointFields {
+        let env = self.environment();
+        SceneCheckpointFields {
+            environment: Some(EnvironmentSnapshot {
+                day: env.day,
+                hour: env.hour,
+                dusk_factor: env.dusk_factor,
+                is_roosting_time: env.is_roosting_time,
+                is_murmuration_season: env.is_murmuration_season,
+                coherence_factor: env.coherence_factor,
+                temperature: env.temperature,
+                predator_active: env.predator_active,
+            }),
+            ..Default::default()
+        }
+    }
+
     fn name(&self) -> &'static str {
         "ecology"
     }
@@ -406,6 +429,19 @@ mod tests {
     fn conforms_to_step_hook_contract() {
         let mut hook = Ecology::new(EcologyParams::builder().build().unwrap());
         murmur_conformance::step_hook(&mut hook);
+    }
+
+    #[test]
+    fn checkpoint_scene_fields_publishes_the_current_environment() {
+        let hook = Ecology::new(EcologyParams::builder().build().unwrap());
+        let fields = hook.checkpoint_scene_fields();
+        let published = fields
+            .environment
+            .expect("ecology must always publish an environment");
+        let live = hook.environment();
+        assert_eq!(published.day, live.day);
+        assert_eq!(published.hour, live.hour);
+        assert_eq!(published.predator_active, live.predator_active);
     }
 
     #[test]

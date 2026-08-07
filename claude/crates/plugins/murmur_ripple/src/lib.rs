@@ -37,7 +37,10 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use murmur_core::{BoidCtx, ConfigError, PluginParams, Registry, Rng, SimView, StepHook, Vec3};
+use murmur_core::{
+    BoidCtx, ConfigError, PluginParams, Registry, RippleSnapshot, Rng, SceneCheckpointFields,
+    SimView, StepHook, Vec3,
+};
 
 const NUM_TRAINS: u32 = 3;
 const MIN_ENVELOPE: f64 = 1e-6;
@@ -64,6 +67,22 @@ impl RippleParams {
         let offset = k as f64 * (self.period / NUM_TRAINS as f64);
         let phase = (t - offset).rem_euclid(self.period);
         self.speed * phase
+    }
+
+    /// Train `k`'s own checkpoint snapshot at elapsed time `t`, centred on `centroid` — the
+    /// same `origin`-is-the-live-flock-centroid technique `murmur_wander` established.
+    /// `phase` is normalized to `[0, 1)` (fraction of `period` elapsed since the train's most
+    /// recent emission), matching `RippleTrainSnapshot`'s own documented contract in
+    /// `murmur_core` — `ring_radius`'s own internal `phase` is an absolute time, not a
+    /// fraction, so it's re-derived here rather than reused directly.
+    fn train_snapshot(&self, k: u32, centroid: Vec3, t: f64) -> murmur_core::RippleTrainSnapshot {
+        let offset = k as f64 * (self.period / NUM_TRAINS as f64);
+        let elapsed = (t - offset).rem_euclid(self.period);
+        murmur_core::RippleTrainSnapshot {
+            origin: centroid,
+            radius: self.speed * elapsed,
+            phase: elapsed / self.period,
+        }
     }
 
     /// The sum of all `NUM_TRAINS` trains' Gaussian-ring envelope contributions at distance `d`
@@ -227,6 +246,21 @@ impl StepHook for Ripple {
         Some((1.0 - sum.min(1.0)).clamp(self.params.min_cap, 1.0))
     }
 
+    /// design/05_viz_contract.md §2.2's `ripple` — a disclosed reinterpretation (see the
+    /// module doc's own "`envelope_sum` doesn't fit" note): the per-train
+    /// `[{origin, phase, radius}]` breakdown that same field description explicitly allows as
+    /// optional, computed fresh from the cached `(centroid, t)` `pre_step` last wrote.
+    fn checkpoint_scene_fields(&self) -> SceneCheckpointFields {
+        let (centroid, t) = *self.center.lock().unwrap();
+        let trains = (0..NUM_TRAINS)
+            .map(|k| self.params.train_snapshot(k, centroid, t))
+            .collect();
+        SceneCheckpointFields {
+            ripple: Some(RippleSnapshot { trains }),
+            ..Default::default()
+        }
+    }
+
     fn name(&self) -> &'static str {
         "ripple"
     }
@@ -353,6 +387,37 @@ mod tests {
         assert!((params.ring_radius(0, 0.0) - 0.0).abs() < 1e-9);
         assert!((params.ring_radius(1, 0.0) - 20.0).abs() < 1e-9);
         assert!((params.ring_radius(2, 0.0) - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn train_snapshot_radius_and_phase_are_consistent_with_ring_radius() {
+        let params = RippleParams::builder()
+            .period(30.0)
+            .speed(1.0)
+            .build()
+            .unwrap();
+        let centroid = Vec3::new(1.0, 2.0, 3.0);
+        let snap = params.train_snapshot(1, centroid, 0.0);
+        assert_eq!(snap.origin, centroid);
+        assert!((snap.radius - params.ring_radius(1, 0.0)).abs() < 1e-9);
+        assert!(
+            (snap.phase - 20.0 / 30.0).abs() < 1e-9,
+            "got {}",
+            snap.phase
+        );
+        assert!((0.0..1.0).contains(&snap.phase));
+    }
+
+    #[test]
+    fn checkpoint_scene_fields_publishes_exactly_num_trains_snapshots() {
+        let hook = Ripple::new(RippleParams::builder().build().unwrap());
+        let fields = hook.checkpoint_scene_fields();
+        let published = fields.ripple.expect("ripple must always publish");
+        assert_eq!(published.trains.len(), NUM_TRAINS as usize);
+        for train in &published.trains {
+            assert!(train.radius.is_finite() && train.radius >= 0.0);
+            assert!((0.0..1.0).contains(&train.phase));
+        }
     }
 
     #[test]

@@ -77,6 +77,84 @@ def test_snapshot_survives_further_step_calls():
     assert snap.step_count == frozen_step_count
 
 
+def test_snapshot_checkpoint_fields_are_all_nan_or_empty_with_no_step_hooks_composed():
+    # design/05_viz_contract.md §2.1/§2.2's "empty, not absent" rule: a composition with no
+    # publishing StepHook/SteeringModifier still has every field, just unpopulated.
+    sim = make_sim(10, seed=3)
+    sim.run_batch(2, 3)
+    snap = sim.snapshot()
+    for field in ("boid_state", "speed_mult", "threat_proximity", "panic", "blackening", "spin"):
+        arr = getattr(snap, field)
+        assert arr.shape == (10,)
+        assert np.all(np.isnan(arr)), f"{field} should be all-NaN with no publishing hook"
+    assert snap.scene["environment"] is None
+    assert snap.scene["wander"] is None
+    assert snap.scene["ripple_trains"] is None
+    assert snap.scene["dynamic_vision_range"] is None
+    assert snap.scene["obstacles"] == []
+
+
+def test_snapshot_publishes_real_boid_state_machine_and_ecology_checkpoint_fields():
+    sim = m.Simulation(
+        boid_count=60,
+        mode="pearce",
+        phi_p=0.50,
+        phi_a=0.20,
+        step_hooks=["boid_state_machine", "ecology"],
+        isolated_max=1,
+        crowded_min=5,
+        vision_radius=15.0,
+        init_radius=8.0,
+        init_seed=5,
+    )
+    sim.run_batch(3, 5)
+    snap = sim.snapshot()
+
+    # boid_state_machine classifies every active boid every step -> never NaN.
+    assert not np.any(np.isnan(snap.boid_state))
+    assert np.all(np.isin(snap.boid_state, [0.0, 1.0, 2.0, 3.0]))
+    # threat_proximity/panic/blackening belong to predator_fsm, not boid_state_machine -- still
+    # all-NaN here, proving fields are attributed per-hook, not blanket-populated once any hook
+    # is present.
+    assert np.all(np.isnan(snap.threat_proximity))
+
+    # ecology always publishes a real environment every step.
+    env = snap.scene["environment"]
+    assert env is not None
+    assert isinstance(env["day"], int)
+    assert isinstance(env["hour"], float)
+    assert isinstance(env["predator_active"], bool)
+
+
+def test_snapshot_publishes_real_wander_and_obstacles_checkpoint_fields():
+    sim = m.Simulation(
+        boid_count=40,
+        mode="pearce",
+        phi_p=0.03,
+        phi_a=0.80,
+        step_hooks=["wander", "obstacles"],
+        wander_pull_strength=0.5,
+        obstacle_kind=0.0,
+        obstacle_radius=5.0,
+        init_radius=20.0,
+        init_seed=9,
+    )
+    sim.run_batch(2, 9)
+    snap = sim.snapshot()
+
+    wander = snap.scene["wander"]
+    assert wander is not None
+    assert len(wander["center"]) == 3
+    assert len(wander["heading"]) == 3
+
+    obstacles = snap.scene["obstacles"]
+    assert len(obstacles) == 1
+    assert obstacles[0]["kind"] == "sphere"
+    assert obstacles[0]["radius"] == 5.0
+    assert obstacles[0]["csg_op"] == "union"
+    assert obstacles[0]["parent"] is None
+
+
 def _fnv1a(data: bytes) -> int:
     """Matches murmur_core::Simulation::state_hash's FNV-1a exactly (pipeline.rs)."""
     h = 0xCBF29CE484222325

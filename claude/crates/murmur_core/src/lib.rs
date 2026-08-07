@@ -46,4 +46,8 @@ pub use registry::{PluginParams, Registry};
 pub use rng::{sample_unit_sphere, uniform01, Rng};
 pub use spatial_index::SpatialIndex;
 pub use speed_model::SpeedModel;
-pub use step_hook::{SimView, StepHook};
+pub use step_hook::{
+    BoidCheckpointFields, CsgOp, EnvironmentSnapshot, ObstacleNodeSnapshot,
+    ObstaclePrimitiveSnapshot, RippleSnapshot, RippleTrainSnapshot, SceneCheckpointFields, SimView,
+    StepHook, WanderSnapshot,
+};

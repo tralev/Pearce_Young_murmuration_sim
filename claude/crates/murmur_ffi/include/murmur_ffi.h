@@ -112,6 +112,12 @@ typedef struct CInterpolationHint {
   uint8_t state_changed;
 } CInterpolationHint;
 
+/**
+ * design/05_viz_contract.md §2.1's `state`/`speed_mult`/`threat_proximity`/`panic`/
+ * `blackening`/`spin` — each `Option<T>` becomes a `has_x: u8` flag plus an always-present
+ * `x` field (`0`/`0.0` when `has_x == 0`), the standard fixed-C-struct encoding for an
+ * optional value this crate already uses elsewhere (e.g. `CCommand`'s `has_seed`).
+ */
 typedef struct CBoidSnapshot {
   struct CVec3 position;
   struct CVec3 velocity;
@@ -122,12 +128,95 @@ typedef struct CBoidSnapshot {
    */
   uint16_t species_code;
   double theta;
+  uint8_t has_state;
+  uint8_t state;
+  uint8_t has_speed_mult;
+  float speed_mult;
+  uint8_t has_threat_proximity;
+  float threat_proximity;
+  uint8_t has_panic;
+  float panic;
+  uint8_t has_blackening;
+  float blackening;
+  uint8_t has_spin;
+  float spin;
 } CBoidSnapshot;
 
 typedef struct CPredatorSnapshot {
   struct CVec3 position;
   struct CVec3 velocity;
 } CPredatorSnapshot;
+
+/**
+ * design/05_viz_contract.md §2.2's `Environment` — `murmur_ecology`'s own 8 published fields.
+ */
+typedef struct CEnvironment {
+  uint64_t day;
+  double hour;
+  double dusk_factor;
+  uint8_t is_roosting_time;
+  uint8_t is_murmuration_season;
+  double coherence_factor;
+  double temperature;
+  uint8_t predator_active;
+} CEnvironment;
+
+/**
+ * design/05_viz_contract.md §2.2's `WanderState`.
+ */
+typedef struct CWanderState {
+  struct CVec3 center;
+  struct CVec3 heading;
+} CWanderState;
+
+/**
+ * One of `murmur_ripple`'s `NUM_TRAINS` trains — see `CRippleState`.
+ */
+typedef struct CRippleTrain {
+  struct CVec3 origin;
+  double radius;
+  double phase;
+} CRippleTrain;
+
+/**
+ * design/05_viz_contract.md §2.2's `RippleState` — a disclosed reinterpretation
+ * (`murmur_ripple`'s own module doc, `murmur_core::RippleSnapshot`'s own doc): the per-train
+ * breakdown instead of a single `envelope_sum` scalar, which doesn't fit a per-boid quantity.
+ * Always exactly 3 trains when populated (`murmur_ripple`'s own fixed `NUM_TRAINS`) — a fixed
+ * C array, not a separate pointer+count pair, since the length is a compile-time constant.
+ */
+typedef struct CRippleState {
+  struct CRippleTrain trains[3];
+} CRippleState;
+
+/**
+ * design/05_viz_contract.md §2.2's own CSG primitive vocabulary. Not a real C tagged union
+ * (this crate's own established "flat struct, unused fields for other variants" convention,
+ * same as `CCommand`) — `kind` selects which fields are meaningful: `0` = Sphere
+ * (`center`/`radius`), `1` = Box (`center`/`half_extent`), `2` = Cylinder
+ * (`center`/`axis`/`radius`/`half_height`).
+ */
+typedef struct CObstaclePrimitive {
+  uint8_t kind;
+  struct CVec3 center;
+  double radius;
+  struct CVec3 half_extent;
+  struct CVec3 axis;
+  double half_height;
+} CObstaclePrimitive;
+
+/**
+ * design/05_viz_contract.md §2.2's own flat, parent-indexed obstacle-scene node list —
+ * `murmur_core::ObstacleNodeSnapshot`'s own shape. `csg_op`: `0` = Union, `1` = Subtract.
+ * `has_parent`/`parent` encode `Option<u32>` the same `has_x`/`x` way every other optional
+ * field in this crate does.
+ */
+typedef struct CObstacleNode {
+  struct CObstaclePrimitive primitive;
+  uint8_t csg_op;
+  uint8_t has_parent;
+  uint32_t parent;
+} CObstacleNode;
 
 /**
  * One checkpoint's data, C-ABI shape (design/05 §2's per-boid/scene-level fields). `boids`/
@@ -146,6 +235,16 @@ typedef struct CCheckpoint {
   const struct CBoidSnapshot *boids;
   uint32_t predator_count;
   const struct CPredatorSnapshot *predators;
+  uint8_t has_environment;
+  struct CEnvironment environment;
+  uint8_t has_wander;
+  struct CWanderState wander;
+  uint8_t has_ripple;
+  struct CRippleState ripple;
+  uint8_t has_dynamic_vision_range;
+  float dynamic_vision_range;
+  uint32_t obstacle_count;
+  const struct CObstacleNode *obstacles;
 } CCheckpoint;
 
 /**

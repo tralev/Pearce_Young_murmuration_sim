@@ -76,7 +76,10 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use murmur_core::{clamp_len, BoidCtx, PluginParams, Registry, SteeringModifier, Vec3, MIN_LEN};
+use murmur_core::{
+    clamp_len, BoidCheckpointFields, BoidCtx, PluginParams, Registry, SteeringModifier, Vec3,
+    MIN_LEN,
+};
 
 #[derive(Clone, Copy)]
 struct SpinState {
@@ -210,6 +213,21 @@ impl SteeringModifier for SpinWaveResponse {
         clamp_len(target_inplane - current_inplane, ctx.core_params.max_force)
     }
 
+    /// design/05_viz_contract.md §2.1's `spin` — `s_z`, this boid's own conjugate-momentum
+    /// spin state. Reads from `pending`, not `committed`: by the time a checkpoint is
+    /// captured (always after a full `step()` completes), `pending` holds the value this
+    /// step's own `respond()` call just computed, while `committed` is still last step's
+    /// frozen read-only snapshot — `pending` is the fresher, "as of now" value a viz consumer
+    /// actually wants. `None` for a boid `respond()` has never seen (e.g. spawned mid-batch,
+    /// after this step's own read phase already ran).
+    fn checkpoint_boid_fields(&self, index: u32) -> BoidCheckpointFields {
+        let inner = self.state.lock().unwrap();
+        BoidCheckpointFields {
+            spin: inner.pending.get(&index).map(|s| s.s_z as f32),
+            ..Default::default()
+        }
+    }
+
     fn name(&self) -> &'static str {
         "spin_wave"
     }
@@ -309,6 +327,29 @@ mod tests {
     #[test]
     fn conforms_to_steering_modifier_contract() {
         murmur_conformance::steering_modifier(&plugin(1.0, 1.0, 1.0));
+    }
+
+    #[test]
+    fn checkpoint_boid_fields_publishes_s_z_after_a_respond_call() {
+        let m = plugin(0.0, 1.0, 1.0);
+        assert_eq!(
+            m.checkpoint_boid_fields(0),
+            BoidCheckpointFields::default(),
+            "unseen boid must be all-None"
+        );
+        let p = params();
+        let domain = DummyDomain;
+        let n: [Neighbor; 0] = [];
+        m.respond(
+            ctx(0, Vec3::new(1.0, 0.0, 0.0), &n, &p, &domain),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+        );
+        let spin = m
+            .checkpoint_boid_fields(0)
+            .spin
+            .expect("boid 0 was just seen by respond()");
+        assert!(spin.is_finite());
     }
 
     #[test]

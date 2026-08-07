@@ -36,7 +36,10 @@
 //! search radius that outgrows its index's cell size still returns correct results, just sweeps
 //! more cells), not a correctness one, so left as a disclosed follow-up rather than solved here.
 
-use murmur_core::{BoidColumns, ConfigError, PluginParams, Registry, SimView, StepHook, Vec3};
+use murmur_core::{
+    BoidColumns, ConfigError, PluginParams, Registry, SceneCheckpointFields, SimView, StepHook,
+    Vec3,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DynamicVisionRangeParams {
@@ -181,6 +184,17 @@ impl StepHook for DynamicVisionRange {
         sim.core_params.vision_radius = base * self.multiplier;
     }
 
+    /// design/05_viz_contract.md §2.2's `dynamic_vision_range` — the same multiplier
+    /// `current_multiplier()` already exposes for tests/introspection, now also published
+    /// through the generic `StepHook` checkpoint-field seam (roadmap.md's own follow-up on
+    /// design/05 alignment).
+    fn checkpoint_scene_fields(&self) -> SceneCheckpointFields {
+        SceneCheckpointFields {
+            dynamic_vision_range: Some(self.multiplier as f32),
+            ..Default::default()
+        }
+    }
+
     fn name(&self) -> &'static str {
         "dynamic_vision_range"
     }
@@ -234,6 +248,15 @@ mod tests {
         let mut hook =
             DynamicVisionRange::new(DynamicVisionRangeParams::builder().build().unwrap());
         murmur_conformance::step_hook(&mut hook);
+    }
+
+    #[test]
+    fn checkpoint_scene_fields_publishes_the_current_multiplier() {
+        let hook = DynamicVisionRange::new(DynamicVisionRangeParams::builder().build().unwrap());
+        assert_eq!(
+            hook.checkpoint_scene_fields().dynamic_vision_range,
+            Some(1.0)
+        );
     }
 
     #[test]

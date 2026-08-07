@@ -3,24 +3,29 @@
 //! (pipeline.rs's module doc) with real periodic checkpoints and an atomically-applied command
 //! queue, via [`Simulation::run_batch_checked`]/[`Simulation::run_batch_with_budget_checked`].
 //!
-//! **Scope.** Every field/command design/05_viz_contract.md §2/§3 names is represented here,
-//! but only the ones with a real plugin behind them today actually do anything: core per-boid
-//! state (always populated), `murmur_predator`'s position/velocity (`predators`), `SetParam`
-//! over the live-mutable subset of `CoreParams`, `Reset`, `SetCheckpointStride`. Everything
-//! else the design names — `AddObstacle`, `SetEnvironment`, `RequestMetric`, and the per-boid/
-//! scene-level fields belonging to `ecology`/`obstacles`/`murmur_spin_wave`/native H₂ (`state`,
-//! `speed_mult`, `threat_proximity`, `panic`, `blackening`, `spin`, `consensus_degree`,
-//! `environment`, `obstacles`, `wander`, `ripple`, `h2_result`) — is either a documented no-op
-//! command or an omitted field, because the plugin that would populate it doesn't exist yet
-//! (Phases 14/15/18). This is not a partial/broken implementation of those — it's the honest
-//! current state of a contract whose full breadth spans plugins not yet built, same "fix
-//! lazily" practice as roadmap.md's G1–G5.
+//! **Scope.** Every field/command design/05_viz_contract.md §2/§3 names is represented here.
+//! Core per-boid state, `murmur_predator`'s position/velocity (`predators`), `SetParam` over
+//! the live-mutable subset of `CoreParams`, `Reset`, and `SetCheckpointStride` were always
+//! real. The per-boid/scene-level fields belonging to `boid_state_machine`/`predator_fsm`/
+//! `spin_wave`/`ecology`/`obstacles`/`wander`/`ripple`/`dynamic_vision_range` (`state`,
+//! `speed_mult`, `threat_proximity`, `panic`, `blackening`, `spin`, `environment`,
+//! `obstacles`, `wander`, `ripple`, `dynamic_vision_range`) are now wired too, generically via
+//! `StepHook::checkpoint_boid_fields`/`checkpoint_scene_fields` (step_hook.rs) — `murmur_core`
+//! never references a specific plugin by name to do this; each hook opts in on its own.
+//! `AddObstacle`/`SetEnvironment`/`RequestMetric` (native H₂/`DensityScaling`/`ShapePCA`/
+//! `TauRho`) and `consensus_degree`/`h2_result` remain documented no-ops/omitted fields — no
+//! command-routing path exists yet to mutate a composed `obstacles`/`ecology` plugin's live
+//! state via the queue (only Python's direct plugin-param construction can configure them
+//! today), and no native H₂-on-checkpoint path exists yet either. Both are real, disclosed,
+//! separately-scoped follow-ups, not this pass's job — same "fix lazily" practice as
+//! roadmap.md's G1–G8.
 
 use crate::boids::Species;
 use crate::math::Vec3;
 use crate::metrics::Metrics;
 use crate::params::CoreParams;
 use crate::pipeline::Simulation;
+use crate::step_hook::{BoidCheckpointFields, SceneCheckpointFields};
 
 /// Delivered once per `Simulation`, before the first checkpoint (design/05 §2.0). Everything
 /// here is constant for the simulation's lifetime (composition is fixed at construction, D14).
@@ -52,6 +57,10 @@ pub struct BoidSnapshot {
     pub velocity: Vec3,
     pub species: Species,
     pub theta: f64,
+    /// design/05_viz_contract.md §2.1's `state`/`speed_mult`/`threat_proximity`/`panic`/
+    /// `blackening`/`spin` — collected generically from every composed `StepHook`'s own
+    /// `checkpoint_boid_fields` (step_hook.rs), never a plugin-name special case here.
+    pub checkpoint_fields: BoidCheckpointFields,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,6 +82,10 @@ pub struct Checkpoint {
     /// Empty if `predator` isn't part of this simulation's composition, or none are alive —
     /// same "empty, not absent" rule as every other optional group (design/05 §1).
     pub predators: Vec<PredatorSnapshot>,
+    /// design/05_viz_contract.md §2.2's `environment`/`obstacles`/`wander`/`ripple`/
+    /// `dynamic_vision_range` — collected generically from every composed `StepHook`'s own
+    /// `checkpoint_scene_fields` (step_hook.rs), never a plugin-name special case here.
+    pub scene_fields: SceneCheckpointFields,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -82,9 +95,11 @@ pub struct CheckpointBuffer {
 
 /// design/05_viz_contract.md §3. Every variant maps to a documented behaviour even when its
 /// target plugin isn't part of the current composition — the design's own "no-op, not error"
-/// rule, which several variants below satisfy unconditionally (no simulation in this codebase
-/// composes `obstacles`/`ecology`/native-H₂ yet, so they always no-op — a correct instance of
-/// that rule, not a stand-in for it).
+/// rule. `obstacles`/`ecology` are real, built plugins now (Track C Phase 18), but no
+/// command-routing path exists yet to mutate either one's *live* state through this queue —
+/// `AddObstacle`/`RemoveObstacle`/`SetEnvironment` are still always a no-op today, a real,
+/// disclosed, separately-scoped follow-up, not the "plugin doesn't exist" reason this said
+/// before those plugins were built.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     AddPredator {
@@ -94,9 +109,11 @@ pub enum Command {
     RemovePredator {
         id: u32,
     },
-    /// No `obstacles` plugin exists yet (Track C Phase 18) — always a no-op.
+    /// No live command-routing path into a composed `obstacles` plugin's scene yet — always a
+    /// no-op (see the enum's own doc).
     AddObstacle,
-    /// No `obstacles` plugin exists yet (Track C Phase 18) — always a no-op.
+    /// No live command-routing path into a composed `obstacles` plugin's scene yet — always a
+    /// no-op (see the enum's own doc).
     RemoveObstacle {
         id: u32,
     },
@@ -104,7 +121,8 @@ pub enum Command {
         name: String,
         value: f64,
     },
-    /// No `ecology` plugin exists yet (Track C Phase 18) — always a no-op.
+    /// No live command-routing path into a composed `ecology` plugin yet — always a no-op (see
+    /// the enum's own doc).
     SetEnvironment,
     Reset {
         count: u32,
@@ -279,7 +297,8 @@ impl Simulation {
                     }
                 }
                 Command::AddObstacle | Command::RemoveObstacle { .. } | Command::SetEnvironment => {
-                    // No plugin exists yet to route to (see module doc) — always a no-op.
+                    // No live command-routing path into a composed obstacles/ecology
+                    // plugin's own state yet (see the enum's own doc) — always a no-op.
                 }
                 Command::SetParam { name, value } => {
                     apply_core_param(&mut self.core_params, &name, value);
@@ -336,6 +355,44 @@ impl Simulation {
         sum / active.len() as f64
     }
 
+    /// Every composed hook's own `checkpoint_boid_fields(index)`, plus the single active
+    /// `SteeringModifier`'s own (e.g. `murmur_spin_wave`'s `spin`), merged in that order
+    /// (`BoidCheckpointFields::merge`'s own first-populated-wins rule) — generic collection, no
+    /// plugin-name special case. `pub` (not just `capture_checkpoint`'s own internal use):
+    /// `murmur_py` reads this directly for its own per-step `Snapshot` extension, since design/
+    /// 05_viz_contract.md §4's "Python path keeps the existing per-step... contract" framing
+    /// means Python surfaces these fields as live per-step state, not by exposing `Checkpoint`
+    /// objects the way the C-ABI batch/checkpoint contract does.
+    pub fn checkpoint_boid_fields(&self, index: u32) -> BoidCheckpointFields {
+        self.step_hooks
+            .iter()
+            .fold(BoidCheckpointFields::default(), |acc, hook| {
+                acc.merge(hook.checkpoint_boid_fields(index))
+            })
+            .merge(self.modifier.checkpoint_boid_fields(index))
+    }
+
+    /// `checkpoint_boid_fields`, once per active boid, in the same `iter_active()` ascending-
+    /// index order every other per-boid accessor (`positions`/`velocities`/`species`/
+    /// `opacity`) already uses — lets a caller `zip` this against those directly.
+    pub fn checkpoint_boid_fields_all(&self) -> Vec<BoidCheckpointFields> {
+        self.boids
+            .iter_active()
+            .map(|i| self.checkpoint_boid_fields(i))
+            .collect()
+    }
+
+    /// Every composed hook's own `checkpoint_scene_fields()`, merged in registration order —
+    /// same generic collection as `checkpoint_boid_fields`, called once per checkpoint rather
+    /// than once per boid. `pub` for the same reason `checkpoint_boid_fields` is.
+    pub fn checkpoint_scene_fields(&self) -> SceneCheckpointFields {
+        self.step_hooks
+            .iter()
+            .fold(SceneCheckpointFields::default(), |acc, hook| {
+                acc.merge(hook.checkpoint_scene_fields())
+            })
+    }
+
     fn capture_checkpoint(&self, base_seed: u64) -> Checkpoint {
         let boids: Vec<BoidSnapshot> = self
             .boids
@@ -345,6 +402,7 @@ impl Simulation {
                 velocity: self.boids.vel[i as usize],
                 species: self.boids.species[i as usize],
                 theta: self.boids.theta[i as usize],
+                checkpoint_fields: self.checkpoint_boid_fields(i),
             })
             .collect();
         let predators: Vec<PredatorSnapshot> = self
@@ -369,6 +427,7 @@ impl Simulation {
             },
             boids,
             predators,
+            scene_fields: self.checkpoint_scene_fields(),
         }
     }
 
@@ -443,375 +502,4 @@ impl Simulation {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::domain::Domain;
-    use crate::init::{Initializer, NoiseSource};
-    use crate::modes::{BoidCtx, FlockingMode, SteerIntent, SteeringModifier};
-    use crate::neighbor::NeighborSelection;
-    use crate::occlusion::OcclusionScratch;
-    use crate::pipeline::SimConfig;
-    use crate::registry::{PluginParams, Registry};
-    use crate::rng::Rng as CoreRng;
-    use crate::spatial_index::SpatialIndex;
-    use crate::speed_model::SpeedModel;
-    use crate::step_hook::StepHook;
-    use crate::BoidColumns;
-
-    struct DummyDomain;
-    impl Domain for DummyDomain {
-        fn delta(&self, a: Vec3, b: Vec3) -> Vec3 {
-            b - a
-        }
-        fn apply(&self, _pos: &mut Vec3, _vel: &mut Vec3, _dt: f64) {}
-        fn name(&self) -> &'static str {
-            "dummy_domain"
-        }
-    }
-
-    struct DummySpatialIndex;
-    impl SpatialIndex for DummySpatialIndex {
-        fn rebuild(&mut self, _boids: &BoidColumns) {}
-        fn candidates(&self, _p: Vec3, _r: f64, out: &mut Vec<u32>) {
-            out.clear();
-        }
-        fn name(&self) -> &'static str {
-            "dummy_spatial_index"
-        }
-    }
-
-    struct DummyNeighborSelection;
-    impl NeighborSelection for DummyNeighborSelection {
-        fn select(
-            &self,
-            _index: &dyn SpatialIndex,
-            _i: u32,
-            _boids: &BoidColumns,
-            _params: &CoreParams,
-        ) -> Vec<crate::neighbor::Neighbor> {
-            Vec::new()
-        }
-        fn name(&self) -> &'static str {
-            "dummy_neighbor_selection"
-        }
-    }
-
-    struct DummyMode;
-    impl FlockingMode for DummyMode {
-        fn desired(
-            &self,
-            ctx: BoidCtx<'_>,
-            _scratch: &mut OcclusionScratch,
-            rng: &mut CoreRng,
-        ) -> SteerIntent {
-            let noise = crate::rng::sample_unit_sphere(rng) * 0.1;
-            SteerIntent {
-                desired_v: ctx.vel + noise,
-                extra_force: Vec3::ZERO,
-                theta: 0.0,
-            }
-        }
-        fn name(&self) -> &'static str {
-            "dummy_mode"
-        }
-    }
-
-    struct DummyModifier;
-    impl SteeringModifier for DummyModifier {
-        fn respond(&self, _ctx: BoidCtx<'_>, desired_v: Vec3, current_vel: Vec3) -> Vec3 {
-            desired_v - current_vel
-        }
-        fn name(&self) -> &'static str {
-            "dummy_modifier"
-        }
-    }
-
-    struct DummySpeedModel;
-    impl SpeedModel for DummySpeedModel {
-        fn enforce(
-            &self,
-            _vel: &mut Vec3,
-            _species: Species,
-            _params: &CoreParams,
-            _cap_multiplier: f64,
-            _rng: &mut CoreRng,
-        ) {
-        }
-        fn name(&self) -> &'static str {
-            "dummy_speed_model"
-        }
-    }
-
-    struct DummyInit;
-    impl Initializer for DummyInit {
-        fn place(
-            &self,
-            count: u32,
-            params: &CoreParams,
-            _rng: &mut CoreRng,
-        ) -> (Vec<Vec3>, Vec<Vec3>) {
-            let pos = (0..count).map(|i| Vec3::new(i as f64, 0.0, 0.0)).collect();
-            let vel = (0..count)
-                .map(|_| Vec3::new(params.cruise_speed, 0.0, 0.0))
-                .collect();
-            (pos, vel)
-        }
-        fn name(&self) -> &'static str {
-            "dummy_init"
-        }
-    }
-
-    struct DummyNoise;
-    impl NoiseSource for DummyNoise {
-        fn sample(&self, _rng: &mut CoreRng) -> Vec3 {
-            Vec3::ZERO
-        }
-        fn name(&self) -> &'static str {
-            "dummy_noise"
-        }
-    }
-
-    struct DummyPredatorHook;
-    impl StepHook for DummyPredatorHook {
-        fn name(&self) -> &'static str {
-            "predator"
-        }
-    }
-
-    fn register_all_dummies(reg: &mut Registry) {
-        reg.register_mode("dummy_mode", |_| Box::new(DummyMode));
-        reg.register_modifier("dummy_modifier", |_| Box::new(DummyModifier));
-        reg.register_domain("dummy_domain", |_| Box::new(DummyDomain));
-        reg.register_spatial_index("dummy_spatial_index", |_| Box::new(DummySpatialIndex));
-        reg.register_neighbor_selection("dummy_neighbor_selection", |_| {
-            Box::new(DummyNeighborSelection)
-        });
-        reg.register_speed_model("dummy_speed_model", |_| Box::new(DummySpeedModel));
-        reg.register_init("dummy_init", |_| Box::new(DummyInit));
-        reg.register_noise("dummy_noise", |_| Box::new(DummyNoise));
-        reg.register_step_hook("predator", |_| Box::new(DummyPredatorHook));
-    }
-
-    fn config(n: u32, with_predator_hook: bool, spawn_headroom: u32) -> SimConfig {
-        SimConfig {
-            mode: "dummy_mode".to_string(),
-            modifier: "dummy_modifier".to_string(),
-            domain: "dummy_domain".to_string(),
-            spatial_index: "dummy_spatial_index".to_string(),
-            neighbor_selection: "dummy_neighbor_selection".to_string(),
-            speed_model: "dummy_speed_model".to_string(),
-            init: "dummy_init".to_string(),
-            noise: "dummy_noise".to_string(),
-            core_params: CoreParams::builder().boid_count(n).build().unwrap(),
-            plugin_params: PluginParams::new(),
-            init_seed: 99,
-            step_hooks: if with_predator_hook {
-                vec!["predator".to_string()]
-            } else {
-                Vec::new()
-            },
-            predator_count: 0,
-            spawn_headroom,
-        }
-    }
-
-    fn built_sim(n: u32, with_predator_hook: bool) -> Simulation {
-        let mut registry = Registry::new();
-        register_all_dummies(&mut registry);
-        Simulation::new(config(n, with_predator_hook, 0), &registry).unwrap()
-    }
-
-    fn built_sim_with_headroom(n: u32, headroom: u32) -> Simulation {
-        let mut registry = Registry::new();
-        register_all_dummies(&mut registry);
-        Simulation::new(config(n, true, headroom), &registry).unwrap()
-    }
-
-    #[test]
-    fn run_batch_checked_with_no_commands_matches_n_sequential_steps() {
-        let mut a = built_sim(10, false);
-        let mut b = built_sim(10, false);
-        a.run_batch_checked(20, 7, Vec::new()).unwrap();
-        for _ in 0..20 {
-            b.step(b.core_params.dt, 7);
-        }
-        assert_eq!(a.state_hash(), b.state_hash());
-        assert_eq!(a.step_count(), b.step_count());
-    }
-
-    #[test]
-    fn invalid_command_rejects_the_whole_batch_before_any_step_runs() {
-        let mut sim = built_sim(5, false);
-        let commands = vec![
-            Command::SetCheckpointStride { stride: 2 },
-            Command::SetParam {
-                name: "not_a_real_param".to_string(),
-                value: 1.0,
-            },
-        ];
-        let result = sim.run_batch_checked(10, 1, commands);
-        assert!(result.is_err());
-        assert_eq!(sim.step_count(), 0, "no step should have run");
-        assert_eq!(
-            sim.checkpoint_stride, 1,
-            "stride command must not have applied either"
-        );
-    }
-
-    #[test]
-    fn checkpoints_are_captured_at_exactly_the_configured_stride() {
-        let mut sim = built_sim(5, false);
-        let commands = vec![Command::SetCheckpointStride { stride: 4 }];
-        let buffer = sim.run_batch_checked(10, 1, commands).unwrap();
-        assert_eq!(buffer.checkpoints.len(), 2); // 10 / 4 = 2, not 3 (no ceiling/partial)
-        assert_eq!(buffer.checkpoints[0].step_count, 4);
-        assert_eq!(buffer.checkpoints[1].step_count, 8);
-    }
-
-    #[test]
-    fn run_batch_with_budget_checked_stops_early_and_leaves_state_usable() {
-        let mut sim = built_sim(500, false);
-        let (buffer, all_done) = sim
-            .run_batch_with_budget_checked(1_000_000, 1, Vec::new(), 0.001)
-            .unwrap();
-        assert!(!all_done);
-        assert!(sim.step_count() < 1_000_000);
-        // default checkpoint_stride is 1, so one checkpoint per completed step in this batch.
-        assert_eq!(sim.step_count(), buffer.checkpoints.len() as u64);
-        for v in sim.velocities() {
-            assert!(v.is_finite(), "state must stay usable after an early stop");
-        }
-    }
-
-    #[test]
-    fn add_predator_is_a_noop_without_the_predator_hook_composed() {
-        let mut sim = built_sim(5, false);
-        let before = sim.boid_count();
-        sim.run_batch_checked(
-            1,
-            1,
-            vec![Command::AddPredator {
-                position: Vec3::ZERO,
-                velocity: Vec3::ZERO,
-            }],
-        )
-        .unwrap();
-        assert_eq!(
-            sim.boid_count(),
-            before,
-            "no predator hook composed -> no-op"
-        );
-    }
-
-    /// With `spawn_headroom: 0` (the default), `BoidColumns` is still sized to exactly
-    /// `boid_count` at construction, so `AddPredator` with the `predator` hook composed still
-    /// no-ops here — a legitimate fixed-capacity limit a host didn't ask to avoid, not the G6
-    /// bug this used to be (roadmap.md §12, now fixed via `SimConfig::spawn_headroom`).
-    #[test]
-    fn add_predator_is_a_noop_at_full_capacity_with_zero_spawn_headroom() {
-        let mut sim = built_sim(5, true);
-        let before = sim.boid_count();
-        sim.run_batch_checked(
-            1,
-            1,
-            vec![Command::AddPredator {
-                position: Vec3::new(9.0, 0.0, 0.0),
-                velocity: Vec3::ZERO,
-            }],
-        )
-        .unwrap();
-        assert_eq!(sim.boid_count(), before, "no free slot -> no-op");
-    }
-
-    /// The G6 fix itself: a host that reserves `spawn_headroom` gets a real, immediate
-    /// `AddPredator` with no workaround needed (contrast with the `Reset`-first dance the
-    /// zero-headroom case below still needs — that's a legitimate capacity limit, not a bug).
-    #[test]
-    fn add_predator_spawns_a_real_boid_directly_when_spawn_headroom_is_reserved() {
-        let mut sim = built_sim_with_headroom(5, 2);
-        let before = sim.boid_count();
-        let buffer = sim
-            .run_batch_checked(
-                1,
-                1,
-                vec![Command::AddPredator {
-                    position: Vec3::new(9.0, 0.0, 0.0),
-                    velocity: Vec3::ZERO,
-                }],
-            )
-            .unwrap();
-        assert_eq!(sim.boid_count(), before + 1);
-        assert_eq!(buffer.checkpoints[0].predators.len(), 1);
-    }
-
-    /// Proves the AddPredator *routing* logic is correct even without reserved headroom, by
-    /// first using `Reset` to legitimately shrink the flock and free slots within the same
-    /// fixed capacity — a real capability (Reset), not a workaround for a bug.
-    #[test]
-    fn add_predator_spawns_a_real_boid_once_a_slot_is_free_via_reset() {
-        let mut sim = built_sim(5, true);
-        let buffer = sim
-            .run_batch_checked(
-                1,
-                1,
-                vec![
-                    Command::Reset {
-                        count: 3,
-                        seed: Some(1),
-                    },
-                    Command::AddPredator {
-                        position: Vec3::new(9.0, 0.0, 0.0),
-                        velocity: Vec3::ZERO,
-                    },
-                ],
-            )
-            .unwrap();
-        assert_eq!(sim.boid_count(), 4); // 3 reset prey + 1 spawned predator
-        assert_eq!(buffer.checkpoints.len(), 1);
-        assert_eq!(buffer.checkpoints[0].predators.len(), 1);
-    }
-
-    #[test]
-    fn reset_reinitializes_under_the_same_composition_and_zeroes_step_count() {
-        let mut sim = built_sim(5, false);
-        sim.run_batch_checked(10, 1, Vec::new()).unwrap();
-        assert_eq!(sim.step_count(), 10);
-        sim.run_batch_checked(
-            1,
-            1,
-            vec![Command::Reset {
-                count: 3,
-                seed: Some(42),
-            }],
-        )
-        .unwrap();
-        // step_count resets to 0 as part of Reset, then advances by the 1 step this same
-        // batch call also runs afterward.
-        assert_eq!(sim.step_count(), 1);
-        assert_eq!(sim.boid_count(), 3);
-    }
-
-    #[test]
-    fn checkpoint_schema_is_the_same_rust_type_regardless_of_composition() {
-        let mut plain = built_sim(3, false);
-        let mut with_predator = built_sim(3, true);
-        let a = plain.run_batch_checked(1, 1, Vec::new()).unwrap();
-        let b = with_predator.run_batch_checked(1, 1, Vec::new()).unwrap();
-        // Both produce the identical `Checkpoint` struct type with the same fields present
-        // (enforced by the type system already); this checks the *value*-level "empty, not
-        // absent" rule holds too — no predator spawned yet in either, just composed in one.
-        assert!(a.checkpoints[0].predators.is_empty());
-        assert!(b.checkpoints[0].predators.is_empty());
-    }
-
-    #[test]
-    fn session_header_is_stable_across_the_simulations_lifetime() {
-        let mut sim = built_sim(4, false);
-        let h1 = sim.session_header();
-        sim.run_batch_checked(5, 1, Vec::new()).unwrap();
-        let h2 = sim.session_header();
-        assert_eq!(h1.session_id, h2.session_id);
-        assert_eq!(h1.build_hash, h2.build_hash);
-        assert_eq!(h1.composition, h2.composition);
-    }
-}
+mod tests;

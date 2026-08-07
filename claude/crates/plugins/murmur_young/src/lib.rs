@@ -61,6 +61,23 @@ pub struct YoungParams {
 }
 
 impl YoungParams {
+    /// The plugin's own documented defaults (`register`'s own doc comment) — used as the
+    /// fallback when a caller-supplied override fails validation.
+    fn default_constants() -> YoungParams {
+        YoungParams {
+            m_min: 2,
+            m_max: 12,
+            m_fallback: 6,
+            refresh_interval: 20,
+            align_weight: 0.5,
+            cohesion_weight: 0.3,
+            noise_weight: 0.2,
+            steric_enabled: false,
+            steric: 0.6,
+            steric_radius: 4.0,
+        }
+    }
+
     fn validate(&self) -> Result<(), ConfigError> {
         if self.m_min == 0 || self.m_max < self.m_min {
             return Err(ConfigError::InvalidParam {
@@ -228,7 +245,16 @@ pub fn register(r: &mut Registry) {
             steric: p.get_or("steric", 0.6),
             steric_radius,
         };
-        Box::new(YoungConsensus::new(params).expect("validated by builder default constants"))
+        // A malformed override (e.g. m_min > m_max) falls back to the default constants
+        // rather than panicking -- the factory type can't return `Result`
+        // (design/02_plugins.md §1), same pattern every other plugin in this catalogue
+        // follows. `murmur_young` was the one holdout still panicking here (a Phase 14
+        // leftover, predating that convention) -- found during a whole-codebase audit,
+        // fixed as a real DoS-by-bad-kwargs risk, not a style nit.
+        Box::new(YoungConsensus::new(params).unwrap_or_else(|_| {
+            YoungConsensus::new(YoungParams::default_constants())
+                .expect("default constants are valid")
+        }))
     });
 }
 
@@ -480,6 +506,18 @@ mod tests {
         let mut reg = Registry::new();
         register(&mut reg);
         let mode = reg.resolve_mode("young", &PluginParams::new()).unwrap();
+        assert_eq!(mode.name(), "young");
+    }
+
+    /// `register()` used to `.expect(...)` here and panic on a malformed override -- the one
+    /// holdout in the whole plugin catalogue not following the "fall back to defaults instead
+    /// of panicking" convention every other plugin's `register()` uses.
+    #[test]
+    fn a_malformed_override_falls_back_to_defaults_instead_of_panicking() {
+        let mut reg = Registry::new();
+        register(&mut reg);
+        let bad = PluginParams::new().with("m_min", 20.0).with("m_max", 2.0); // m_min > m_max
+        let mode = reg.resolve_mode("young", &bad).unwrap();
         assert_eq!(mode.name(), "young");
     }
 }

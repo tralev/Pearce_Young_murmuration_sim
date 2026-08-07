@@ -19,6 +19,7 @@ use crate::neighbor::Neighbor;
 use crate::occlusion::OcclusionScratch;
 use crate::params::CoreParams;
 use crate::rng::Rng;
+use crate::step_hook::BoidCheckpointFields;
 
 /// Everything a mode or modifier needs, borrowed for the read phase (immutable → parallel-safe,
 /// `Copy` so the same value can be passed to both `desired()` and `respond()`).
@@ -85,4 +86,14 @@ pub trait SteeringModifier: Send + Sync {
     /// Converts a `FlockingMode`'s desired velocity into this boid's actual acceleration.
     fn respond(&self, ctx: BoidCtx<'_>, desired_v: Vec3, current_vel: Vec3) -> Vec3;
     fn name(&self) -> &'static str;
+
+    /// This boid's own published checkpoint fields, if any (design/05_viz_contract.md §2.1) —
+    /// e.g. `murmur_spin_wave`'s own `s_z` as `spin`. `SteeringModifier` is a single-occupant
+    /// socket (unlike `StepHook`'s `Vec`), so `batch.rs`'s checkpoint capture calls this once
+    /// per boid on the one active modifier and merges it with every `StepHook`'s own answer —
+    /// same `BoidCheckpointFields`/default-empty shape, same reasoning as `StepHook`'s own
+    /// version of this method.
+    fn checkpoint_boid_fields(&self, _index: u32) -> BoidCheckpointFields {
+        BoidCheckpointFields::default()
+    }
 }

@@ -21,3 +21,11 @@ murmur_hash_grid = { path = "../plugins/murmur_hash_grid" }
 murmur_radius_gather = { path = "../plugins/murmur_radius_gather" }
 murmur_initializers = { path = "../plugins/murmur_initializers" }
 murmur_predator = { path = "../plugins/murmur_predator" }
+murmur_predator_fsm = { path = "../plugins/murmur_predator_fsm" }
+murmur_spin_wave = { path = "../plugins/murmur_spin_wave" }
+murmur_boid_state_machine = { path = "../plugins/murmur_boid_state_machine" }
+murmur_ecology = { path = "../plugins/murmur_ecology" }
+murmur_obstacles = { path = "../plugins/murmur_obstacles" }
+murmur_wander = { path = "../plugins/murmur_wander" }
+murmur_ripple = { path = "../plugins/murmur_ripple" }
+murmur_dynamic_vision_range = { path = "../plugins/murmur_dynamic_vision_range" }

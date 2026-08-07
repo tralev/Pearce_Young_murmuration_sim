@@ -1,6 +1,6 @@
 """Type stubs for the compiled `_core` extension (design/03_observables_bindings.md §2.1)."""
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -16,6 +16,20 @@ class Snapshot:
     metrics: Dict[str, float]
     step_count: int
     state_hash: int
+    # design/05_viz_contract.md §2.1's per-boid state/speed_mult/threat_proximity/panic/
+    # blackening/spin, each an (N,) float64 array, NaN where the active composition's
+    # StepHooks/SteeringModifier don't publish that field for a given boid.
+    boid_state: npt.NDArray[np.float64]  # (N,), read-only -- NaN, or 0=Normal/1=Isolated/
+    # 2=Crowded/3=Threatened (boid_state_machine's own encoding) when populated
+    speed_mult: npt.NDArray[np.float64]  # (N,), read-only
+    threat_proximity: npt.NDArray[np.float64]  # (N,), read-only
+    panic: npt.NDArray[np.float64]  # (N,), read-only
+    blackening: npt.NDArray[np.float64]  # (N,), read-only
+    spin: npt.NDArray[np.float64]  # (N,), read-only
+    # design/05_viz_contract.md §2.2's scene-level fields: {"environment": dict|None,
+    # "wander": dict|None, "ripple_trains": list[tuple]|None, "dynamic_vision_range": float|None,
+    # "obstacles": list[dict]}.
+    scene: Dict[str, Any]
 
 class Command:
     """Track B's atomic command-queue contract (design/05_viz_contract.md §3), for use with

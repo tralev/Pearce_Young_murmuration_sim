@@ -28,7 +28,10 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use murmur_core::batch::Command;
-use murmur_core::{CoreParams, PluginParams, Registry, SimConfig, Simulation, Species, Vec3};
+use murmur_core::{
+    BoidCheckpointFields, CoreParams, PluginParams, Registry, SceneCheckpointFields, SimConfig,
+    Simulation, Species, Vec3,
+};
 
 fn map_config_error(e: murmur_core::ConfigError) -> PyErr {
     PyValueError::new_err(e.to_string())
@@ -136,6 +139,29 @@ struct PySnapshot {
     step_count: u64,
     #[pyo3(get)]
     state_hash: u64,
+    /// design/05_viz_contract.md §2.1's `state`/`speed_mult`/`threat_proximity`/`panic`/
+    /// `blackening`/`spin` — one `float64` array per field, same active-boid ordering as
+    /// `positions`/`velocities`/`species`/`opacity`, `NaN` where the underlying value is
+    /// `None` (no `StepHook`/`SteeringModifier` in this composition publishes that field for
+    /// that boid) — a single consistent numeric sentinel, avoiding a second per-field boolean
+    /// mask array for what's fundamentally sparse, occasionally-populated diagnostic data.
+    #[pyo3(get)]
+    boid_state: Py<PyArray1<f64>>,
+    #[pyo3(get)]
+    speed_mult: Py<PyArray1<f64>>,
+    #[pyo3(get)]
+    threat_proximity: Py<PyArray1<f64>>,
+    #[pyo3(get)]
+    panic: Py<PyArray1<f64>>,
+    #[pyo3(get)]
+    blackening: Py<PyArray1<f64>>,
+    #[pyo3(get)]
+    spin: Py<PyArray1<f64>>,
+    /// design/05_viz_contract.md §2.2's `environment`/`obstacles`/`wander`/`ripple`/
+    /// `dynamic_vision_range` — a plain dict (same pattern `metrics` already uses), each key
+    /// `None` when the composition has no plugin publishing it.
+    #[pyo3(get)]
+    scene: Py<PyDict>,
 }
 
 /// Wraps `murmur_core::batch::Command` (design/05_viz_contract.md §3, roadmap.md Phase 10) for
@@ -143,8 +169,12 @@ struct PySnapshot {
 /// (`murmur_ffi`)/the `reference_desktop` consumer. Only the variants with a real behaviour
 /// behind them today are exposed (`AddPredator`, `RemovePredator`, `SetParam`, `Reset`,
 /// `SetCheckpointStride`) — `AddObstacle`/`RemoveObstacle`/`SetEnvironment`/`RequestMetric` are
-/// documented no-ops in Rust too (no `obstacles`/`ecology`/native-H₂ plugin exists yet); adding
-/// Python constructors for commands that can't do anything yet would be misleading, not useful.
+/// documented no-ops in Rust too. `obstacles`/`ecology` are real, built plugins now (their own
+/// *published* state reaches Python via `Snapshot.scene`, see `PySnapshot` above) — what's
+/// still missing is a live command-routing path to *mutate* either one's state through this
+/// queue, a real, disclosed, separately-scoped follow-up (`batch.rs`'s own module doc), not the
+/// "plugin doesn't exist" reason this said before those plugins were built. Adding Python
+/// constructors for commands that still can't do anything would be misleading, not useful.
 /// `SetParam` only reaches `CoreParams`' live-mutable subset (`cruise_speed`, `max_force`,
 /// `speed_min_factor`, `dt`, `vision_radius`) — plugin-private params (`phi_p`, `field_strength`,
 /// ...) are baked in at construction with no live-mutation path (`batch.rs`'s own module doc).
@@ -860,6 +890,7 @@ impl PySimulation {
     /// A snapshot of owned copies — safe to keep across further `step()` calls
     /// (design/03_observables_bindings.md §2.1).
     fn snapshot(&self, py: Python<'_>) -> PyResult<PySnapshot> {
+        let fields = self.inner.checkpoint_boid_fields_all();
         Ok(PySnapshot {
             positions: vec3_slice_to_array2(py, &self.inner.positions())?.unbind(),
             velocities: vec3_slice_to_array2(py, &self.inner.velocities())?.unbind(),
@@ -868,8 +899,121 @@ impl PySimulation {
             metrics: metrics_to_dict(py, self.inner.metrics())?.unbind(),
             step_count: self.inner.step_count(),
             state_hash: self.inner.state_hash(),
+            boid_state: boid_field_array(py, &fields, |f| f.state.map(|s| s as f64)),
+            speed_mult: boid_field_array(py, &fields, |f| f.speed_mult.map(|v| v as f64)),
+            threat_proximity: boid_field_array(py, &fields, |f| {
+                f.threat_proximity.map(|v| v as f64)
+            }),
+            panic: boid_field_array(py, &fields, |f| f.panic.map(|v| v as f64)),
+            blackening: boid_field_array(py, &fields, |f| f.blackening.map(|v| v as f64)),
+            spin: boid_field_array(py, &fields, |f| f.spin.map(|v| v as f64)),
+            scene: scene_fields_to_dict(py, &self.inner.checkpoint_scene_fields())?.unbind(),
         })
     }
+}
+
+/// One `BoidCheckpointFields` field, across every active boid, as a `float64` numpy array —
+/// `NaN` wherever `extract` returns `None` (see `PySnapshot::boid_state`'s own doc for why a
+/// numeric sentinel, not a second mask array).
+fn boid_field_array<'py>(
+    py: Python<'py>,
+    fields: &[BoidCheckpointFields],
+    extract: impl Fn(&BoidCheckpointFields) -> Option<f64>,
+) -> Py<PyArray1<f64>> {
+    let values: Vec<f64> = fields
+        .iter()
+        .map(|f| extract(f).unwrap_or(f64::NAN))
+        .collect();
+    let arr = values.into_pyarray_bound(py);
+    mark_readonly(&arr);
+    arr.unbind()
+}
+
+fn scene_fields_to_dict<'py>(
+    py: Python<'py>,
+    s: &SceneCheckpointFields,
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new_bound(py);
+    match s.environment {
+        Some(e) => {
+            let env = PyDict::new_bound(py);
+            env.set_item("day", e.day)?;
+            env.set_item("hour", e.hour)?;
+            env.set_item("dusk_factor", e.dusk_factor)?;
+            env.set_item("is_roosting_time", e.is_roosting_time)?;
+            env.set_item("is_murmuration_season", e.is_murmuration_season)?;
+            env.set_item("coherence_factor", e.coherence_factor)?;
+            env.set_item("temperature", e.temperature)?;
+            env.set_item("predator_active", e.predator_active)?;
+            dict.set_item("environment", env)?;
+        }
+        None => dict.set_item("environment", py.None())?,
+    }
+    match s.wander {
+        Some(w) => {
+            let wander = PyDict::new_bound(py);
+            wander.set_item("center", (w.center.x, w.center.y, w.center.z))?;
+            wander.set_item("heading", (w.heading.x, w.heading.y, w.heading.z))?;
+            dict.set_item("wander", wander)?;
+        }
+        None => dict.set_item("wander", py.None())?,
+    }
+    match &s.ripple {
+        Some(r) => {
+            let trains: Vec<(f64, f64, f64, f64, f64)> = r
+                .trains
+                .iter()
+                .map(|t| (t.origin.x, t.origin.y, t.origin.z, t.radius, t.phase))
+                .collect();
+            dict.set_item("ripple_trains", trains)?;
+        }
+        None => dict.set_item("ripple_trains", py.None())?,
+    }
+    dict.set_item("dynamic_vision_range", s.dynamic_vision_range)?;
+
+    let obstacles = pyo3::types::PyList::empty_bound(py);
+    for node in &s.obstacles {
+        let entry = PyDict::new_bound(py);
+        match node.primitive {
+            murmur_core::ObstaclePrimitiveSnapshot::Sphere { center, radius } => {
+                entry.set_item("kind", "sphere")?;
+                entry.set_item("center", (center.x, center.y, center.z))?;
+                entry.set_item("radius", radius)?;
+            }
+            murmur_core::ObstaclePrimitiveSnapshot::Box {
+                center,
+                half_extent,
+            } => {
+                entry.set_item("kind", "box")?;
+                entry.set_item("center", (center.x, center.y, center.z))?;
+                entry.set_item("half_extent", (half_extent.x, half_extent.y, half_extent.z))?;
+            }
+            murmur_core::ObstaclePrimitiveSnapshot::Cylinder {
+                center,
+                axis,
+                radius,
+                half_height,
+            } => {
+                entry.set_item("kind", "cylinder")?;
+                entry.set_item("center", (center.x, center.y, center.z))?;
+                entry.set_item("axis", (axis.x, axis.y, axis.z))?;
+                entry.set_item("radius", radius)?;
+                entry.set_item("half_height", half_height)?;
+            }
+        }
+        entry.set_item(
+            "csg_op",
+            match node.csg_op {
+                murmur_core::CsgOp::Union => "union",
+                murmur_core::CsgOp::Subtract => "subtract",
+            },
+        )?;
+        entry.set_item("parent", node.parent)?;
+        obstacles.append(entry)?;
+    }
+    dict.set_item("obstacles", obstacles)?;
+
+    Ok(dict)
 }
 
 fn metrics_to_dict<'py>(py: Python<'py>, m: &murmur_core::Metrics) -> PyResult<Bound<'py, PyDict>> {

@@ -44,7 +44,8 @@
 use std::sync::Mutex;
 
 use murmur_core::{
-    BoidCtx, ConfigError, PluginParams, Registry, Rng, SimView, StepHook, Vec3, MIN_LEN2,
+    BoidCtx, ConfigError, PluginParams, Registry, Rng, SceneCheckpointFields, SimView, StepHook,
+    Vec3, WanderSnapshot, MIN_LEN2,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -267,6 +268,18 @@ impl StepHook for Wander {
         }
     }
 
+    /// design/05_viz_contract.md §2.2's `wander` — the same `wander_center`/`wander_heading`
+    /// accessors, now also published through the generic `StepHook` checkpoint-field seam.
+    fn checkpoint_scene_fields(&self) -> SceneCheckpointFields {
+        SceneCheckpointFields {
+            wander: Some(WanderSnapshot {
+                center: self.wander_center(),
+                heading: self.wander_heading(),
+            }),
+            ..Default::default()
+        }
+    }
+
     fn name(&self) -> &'static str {
         "wander"
     }
@@ -330,6 +343,23 @@ mod tests {
     fn conforms_to_step_hook_contract() {
         let mut hook = Wander::new(WanderParams::builder().build().unwrap());
         murmur_conformance::step_hook(&mut hook);
+    }
+
+    #[test]
+    fn checkpoint_scene_fields_publishes_the_cached_center_and_heading() {
+        let mut hook = Wander::new(WanderParams::builder().build().unwrap());
+        let boids = BoidColumns::with_capacity(0);
+        let mut params = core_params(1.0);
+        let mut view = SimView {
+            boids: &boids,
+            core_params: &mut params,
+            step_count: 5,
+        };
+        hook.pre_step(&mut view);
+        let fields = hook.checkpoint_scene_fields();
+        let published = fields.wander.expect("wander must publish after pre_step");
+        assert_eq!(published.center, hook.wander_center());
+        assert_eq!(published.heading, hook.wander_heading());
     }
 
     #[test]

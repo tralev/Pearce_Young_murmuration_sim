@@ -64,7 +64,10 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use murmur_core::{BoidCtx, ConfigError, PluginParams, Registry, Rng, StepHook, Vec3};
+use murmur_core::{
+    BoidCtx, ConfigError, CsgOp, ObstacleNodeSnapshot, ObstaclePrimitiveSnapshot, PluginParams,
+    Registry, Rng, SceneCheckpointFields, StepHook, Vec3,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Primitive {
@@ -116,6 +119,35 @@ impl Primitive {
             }
         }
     }
+
+    /// This primitive's own `ObstaclePrimitiveSnapshot` — a field-for-field mirror
+    /// (`murmur_core` never depends on this plugin crate; the checkpoint schema type lives in
+    /// infrastructure, this is just the conversion).
+    fn to_snapshot(self) -> ObstaclePrimitiveSnapshot {
+        match self {
+            Primitive::Sphere { center, radius } => {
+                ObstaclePrimitiveSnapshot::Sphere { center, radius }
+            }
+            Primitive::Box {
+                center,
+                half_extent,
+            } => ObstaclePrimitiveSnapshot::Box {
+                center,
+                half_extent,
+            },
+            Primitive::Cylinder {
+                center,
+                axis,
+                radius,
+                half_height,
+            } => ObstaclePrimitiveSnapshot::Cylinder {
+                center,
+                axis,
+                radius,
+                half_height,
+            },
+        }
+    }
 }
 
 /// A `base` primitive, optionally with a `cut` primitive subtracted out of it — the standard CSG
@@ -164,6 +196,30 @@ impl ObstacleScene {
     pub fn with_solid(mut self, solid: Solid) -> Self {
         self.solids.push(solid);
         self
+    }
+
+    /// Maps this scene onto design/05_viz_contract.md §2.2's own flat, parent-indexed CSG node
+    /// list: each `Solid`'s `base` becomes a root-level `Union` node (`parent: None`), and its
+    /// optional `cut` (if present) becomes a `Subtract` node whose `parent` points back at that
+    /// base node's own index — the exact shape the design names.
+    pub fn checkpoint_nodes(&self) -> Vec<ObstacleNodeSnapshot> {
+        let mut nodes = Vec::with_capacity(self.solids.len() * 2);
+        for solid in &self.solids {
+            let base_index = nodes.len() as u32;
+            nodes.push(ObstacleNodeSnapshot {
+                primitive: solid.base.to_snapshot(),
+                csg_op: CsgOp::Union,
+                parent: None,
+            });
+            if let Some(cut) = solid.cut {
+                nodes.push(ObstacleNodeSnapshot {
+                    primitive: cut.to_snapshot(),
+                    csg_op: CsgOp::Subtract,
+                    parent: Some(base_index),
+                });
+            }
+        }
+        nodes
     }
 
     pub fn sdf(&self, p: Vec3) -> f64 {
@@ -310,6 +366,15 @@ impl StepHook for Obstacle {
             let denom = d.max(self.params.min_gap);
             let magnitude = self.params.push_strength / denom;
             *acc += direction * magnitude;
+        }
+    }
+
+    /// design/05_viz_contract.md §2.2's `obstacles` — the scene's own `checkpoint_nodes()`,
+    /// now also published through the generic `StepHook` checkpoint-field seam.
+    fn checkpoint_scene_fields(&self) -> SceneCheckpointFields {
+        SceneCheckpointFields {
+            obstacles: self.scene.checkpoint_nodes(),
+            ..Default::default()
         }
     }
 
@@ -524,6 +589,57 @@ mod tests {
             "the shell itself must remain solid: got {}",
             solid.sdf(q)
         );
+    }
+
+    #[test]
+    fn checkpoint_nodes_maps_a_base_only_solid_to_one_union_root_node() {
+        let scene = ObstacleScene::new().with_solid(Solid::new(Primitive::Sphere {
+            center: Vec3::ZERO,
+            radius: 5.0,
+        }));
+        let nodes = scene.checkpoint_nodes();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].csg_op, CsgOp::Union);
+        assert_eq!(nodes[0].parent, None);
+        assert!(matches!(
+            nodes[0].primitive,
+            ObstaclePrimitiveSnapshot::Sphere { radius, .. } if radius == 5.0
+        ));
+    }
+
+    #[test]
+    fn checkpoint_nodes_maps_a_subtract_solid_to_a_base_plus_a_child_cut_node() {
+        let scene = ObstacleScene::new().with_solid(
+            Solid::new(Primitive::Sphere {
+                center: Vec3::ZERO,
+                radius: 5.0,
+            })
+            .subtract(Primitive::Sphere {
+                center: Vec3::ZERO,
+                radius: 3.0,
+            }),
+        );
+        let nodes = scene.checkpoint_nodes();
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(nodes[0].csg_op, CsgOp::Union);
+        assert_eq!(nodes[0].parent, None);
+        assert_eq!(nodes[1].csg_op, CsgOp::Subtract);
+        assert_eq!(nodes[1].parent, Some(0));
+    }
+
+    #[test]
+    fn checkpoint_scene_fields_publishes_the_scenes_own_node_list() {
+        let scene = ObstacleScene::new().with_solid(Solid::new(Primitive::Box {
+            center: Vec3::ZERO,
+            half_extent: Vec3::new(1.0, 1.0, 1.0),
+        }));
+        let hook = Obstacle::new(ObstacleParams::builder().build().unwrap(), scene);
+        let fields = hook.checkpoint_scene_fields();
+        assert_eq!(fields.obstacles.len(), 1);
+        assert!(matches!(
+            fields.obstacles[0].primitive,
+            ObstaclePrimitiveSnapshot::Box { .. }
+        ));
     }
 
     #[test]

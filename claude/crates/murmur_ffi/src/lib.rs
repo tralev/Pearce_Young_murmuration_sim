@@ -45,6 +45,17 @@ fn full_registry() -> Registry {
     murmur_core::speed_model::register(&mut reg);
     murmur_initializers::register(&mut reg);
     murmur_predator::register(&mut reg);
+    // The plugins whose own state now reaches CCheckpoint's new fields (see CBoidSnapshot's
+    // checkpoint-field additions below) -- registered here so a real C caller can actually
+    // compose a Simulation that populates them, not just link against dead struct fields.
+    murmur_predator_fsm::register(&mut reg);
+    murmur_spin_wave::register(&mut reg);
+    murmur_boid_state_machine::register(&mut reg);
+    murmur_ecology::register(&mut reg);
+    murmur_obstacles::register(&mut reg);
+    murmur_wander::register(&mut reg);
+    murmur_ripple::register(&mut reg);
+    murmur_dynamic_vision_range::register(&mut reg);
     reg
 }
 
@@ -460,6 +471,10 @@ unsafe fn decode_commands(ptr: *const CCommand, len: usize) -> Result<Vec<Comman
     Ok(out)
 }
 
+/// design/05_viz_contract.md §2.1's `state`/`speed_mult`/`threat_proximity`/`panic`/
+/// `blackening`/`spin` — each `Option<T>` becomes a `has_x: u8` flag plus an always-present
+/// `x` field (`0`/`0.0` when `has_x == 0`), the standard fixed-C-struct encoding for an
+/// optional value this crate already uses elsewhere (e.g. `CCommand`'s `has_seed`).
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct CBoidSnapshot {
@@ -470,6 +485,18 @@ pub struct CBoidSnapshot {
     /// `1` = Predator, `1000 + tag` = `Custom(tag)`.
     pub species_code: u16,
     pub theta: f64,
+    pub has_state: u8,
+    pub state: u8,
+    pub has_speed_mult: u8,
+    pub speed_mult: f32,
+    pub has_threat_proximity: u8,
+    pub threat_proximity: f32,
+    pub has_panic: u8,
+    pub panic: f32,
+    pub has_blackening: u8,
+    pub blackening: f32,
+    pub has_spin: u8,
+    pub spin: f32,
 }
 
 fn species_code(s: Species) -> u16 {
@@ -510,6 +537,77 @@ pub struct CInterpolationHint {
     pub state_changed: u8,
 }
 
+/// design/05_viz_contract.md §2.2's `Environment` — `murmur_ecology`'s own 8 published fields.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CEnvironment {
+    pub day: u64,
+    pub hour: f64,
+    pub dusk_factor: f64,
+    pub is_roosting_time: u8,
+    pub is_murmuration_season: u8,
+    pub coherence_factor: f64,
+    pub temperature: f64,
+    pub predator_active: u8,
+}
+
+/// design/05_viz_contract.md §2.2's `WanderState`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CWanderState {
+    pub center: CVec3,
+    pub heading: CVec3,
+}
+
+/// One of `murmur_ripple`'s `NUM_TRAINS` trains — see `CRippleState`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CRippleTrain {
+    pub origin: CVec3,
+    pub radius: f64,
+    pub phase: f64,
+}
+
+/// design/05_viz_contract.md §2.2's `RippleState` — a disclosed reinterpretation
+/// (`murmur_ripple`'s own module doc, `murmur_core::RippleSnapshot`'s own doc): the per-train
+/// breakdown instead of a single `envelope_sum` scalar, which doesn't fit a per-boid quantity.
+/// Always exactly 3 trains when populated (`murmur_ripple`'s own fixed `NUM_TRAINS`) — a fixed
+/// C array, not a separate pointer+count pair, since the length is a compile-time constant.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CRippleState {
+    pub trains: [CRippleTrain; 3],
+}
+
+/// design/05_viz_contract.md §2.2's own CSG primitive vocabulary. Not a real C tagged union
+/// (this crate's own established "flat struct, unused fields for other variants" convention,
+/// same as `CCommand`) — `kind` selects which fields are meaningful: `0` = Sphere
+/// (`center`/`radius`), `1` = Box (`center`/`half_extent`), `2` = Cylinder
+/// (`center`/`axis`/`radius`/`half_height`).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CObstaclePrimitive {
+    pub kind: u8,
+    pub center: CVec3,
+    pub radius: f64,
+    pub half_extent: CVec3,
+    pub axis: CVec3,
+    pub half_height: f64,
+}
+
+/// design/05_viz_contract.md §2.2's own flat, parent-indexed obstacle-scene node list —
+/// `murmur_core::ObstacleNodeSnapshot`'s own shape. `csg_op`: `0` = Union, `1` = Subtract.
+/// `has_parent`/`parent` encode `Option<u32>` the same `has_x`/`x` way every other optional
+/// field in this crate does.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CObstacleNode {
+    pub primitive: CObstaclePrimitive,
+    pub csg_op: u8,
+    pub has_parent: u8,
+    pub parent: u32,
+}
+
 /// One checkpoint's data, C-ABI shape (design/05 §2's per-boid/scene-level fields). `boids`/
 /// `predators` point into arrays owned by the `MurmurCheckpointBuffer` this came from — valid
 /// until `murmur_checkpoint_buffer_destroy` is called on that buffer, not just for this call.
@@ -526,6 +624,76 @@ pub struct CCheckpoint {
     pub boids: *const CBoidSnapshot,
     pub predator_count: u32,
     pub predators: *const CPredatorSnapshot,
+    pub has_environment: u8,
+    pub environment: CEnvironment,
+    pub has_wander: u8,
+    pub wander: CWanderState,
+    pub has_ripple: u8,
+    pub ripple: CRippleState,
+    pub has_dynamic_vision_range: u8,
+    pub dynamic_vision_range: f32,
+    pub obstacle_count: u32,
+    pub obstacles: *const CObstacleNode,
+}
+
+fn opt_f32(v: Option<f32>) -> (u8, f32) {
+    match v {
+        Some(x) => (1, x),
+        None => (0, 0.0),
+    }
+}
+
+fn c_obstacle_primitive(p: murmur_core::ObstaclePrimitiveSnapshot) -> CObstaclePrimitive {
+    match p {
+        murmur_core::ObstaclePrimitiveSnapshot::Sphere { center, radius } => CObstaclePrimitive {
+            kind: 0,
+            center: center.into(),
+            radius,
+            half_extent: CVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            axis: CVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            half_height: 0.0,
+        },
+        murmur_core::ObstaclePrimitiveSnapshot::Box {
+            center,
+            half_extent,
+        } => CObstaclePrimitive {
+            kind: 1,
+            center: center.into(),
+            radius: 0.0,
+            half_extent: half_extent.into(),
+            axis: CVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            half_height: 0.0,
+        },
+        murmur_core::ObstaclePrimitiveSnapshot::Cylinder {
+            center,
+            axis,
+            radius,
+            half_height,
+        } => CObstaclePrimitive {
+            kind: 2,
+            center: center.into(),
+            radius,
+            half_extent: CVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            axis: axis.into(),
+            half_height,
+        },
+    }
 }
 
 /// Owns the repr(C)-converted per-checkpoint arrays so pointers handed out by
@@ -534,6 +702,7 @@ pub struct MurmurCheckpointBuffer {
     checkpoints: Vec<Checkpoint>,
     c_boids: Vec<Vec<CBoidSnapshot>>,
     c_predators: Vec<Vec<CPredatorSnapshot>>,
+    c_obstacles: Vec<Vec<CObstacleNode>>,
 }
 
 impl MurmurCheckpointBuffer {
@@ -543,11 +712,31 @@ impl MurmurCheckpointBuffer {
             .map(|cp| {
                 cp.boids
                     .iter()
-                    .map(|b| CBoidSnapshot {
-                        position: b.position.into(),
-                        velocity: b.velocity.into(),
-                        species_code: species_code(b.species),
-                        theta: b.theta,
+                    .map(|b| {
+                        let f = &b.checkpoint_fields;
+                        let (has_speed_mult, speed_mult) = opt_f32(f.speed_mult);
+                        let (has_threat_proximity, threat_proximity) = opt_f32(f.threat_proximity);
+                        let (has_panic, panic) = opt_f32(f.panic);
+                        let (has_blackening, blackening) = opt_f32(f.blackening);
+                        let (has_spin, spin) = opt_f32(f.spin);
+                        CBoidSnapshot {
+                            position: b.position.into(),
+                            velocity: b.velocity.into(),
+                            species_code: species_code(b.species),
+                            theta: b.theta,
+                            has_state: f.state.is_some() as u8,
+                            state: f.state.unwrap_or(0),
+                            has_speed_mult,
+                            speed_mult,
+                            has_threat_proximity,
+                            threat_proximity,
+                            has_panic,
+                            panic,
+                            has_blackening,
+                            blackening,
+                            has_spin,
+                            spin,
+                        }
                     })
                     .collect()
             })
@@ -564,10 +753,29 @@ impl MurmurCheckpointBuffer {
                     .collect()
             })
             .collect();
+        let c_obstacles = checkpoints
+            .iter()
+            .map(|cp| {
+                cp.scene_fields
+                    .obstacles
+                    .iter()
+                    .map(|n| CObstacleNode {
+                        primitive: c_obstacle_primitive(n.primitive),
+                        csg_op: match n.csg_op {
+                            murmur_core::CsgOp::Union => 0,
+                            murmur_core::CsgOp::Subtract => 1,
+                        },
+                        has_parent: n.parent.is_some() as u8,
+                        parent: n.parent.unwrap_or(0),
+                    })
+                    .collect()
+            })
+            .collect();
         MurmurCheckpointBuffer {
             checkpoints,
             c_boids,
             c_predators,
+            c_obstacles,
         }
     }
 }
@@ -622,6 +830,46 @@ pub unsafe extern "C" fn murmur_checkpoint_buffer_get(
         boids: ptr::null(),
         predator_count: 0,
         predators: ptr::null(),
+        has_environment: 0,
+        environment: CEnvironment {
+            day: 0,
+            hour: 0.0,
+            dusk_factor: 0.0,
+            is_roosting_time: 0,
+            is_murmuration_season: 0,
+            coherence_factor: 0.0,
+            temperature: 0.0,
+            predator_active: 0,
+        },
+        has_wander: 0,
+        wander: CWanderState {
+            center: CVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            heading: CVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+        },
+        has_ripple: 0,
+        ripple: CRippleState {
+            trains: [CRippleTrain {
+                origin: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                radius: 0.0,
+                phase: 0.0,
+            }; 3],
+        },
+        has_dynamic_vision_range: 0,
+        dynamic_vision_range: 0.0,
+        obstacle_count: 0,
+        obstacles: ptr::null(),
     };
     if buf.is_null() {
         return zeroed;
@@ -632,6 +880,36 @@ pub unsafe extern "C" fn murmur_checkpoint_buffer_get(
     };
     let c_boids = &buf.c_boids[index];
     let c_predators = &buf.c_predators[index];
+    let c_obstacles = &buf.c_obstacles[index];
+    let scene = &cp.scene_fields;
+    let environment = scene.environment.map(|e| CEnvironment {
+        day: e.day,
+        hour: e.hour,
+        dusk_factor: e.dusk_factor,
+        is_roosting_time: e.is_roosting_time as u8,
+        is_murmuration_season: e.is_murmuration_season as u8,
+        coherence_factor: e.coherence_factor,
+        temperature: e.temperature,
+        predator_active: e.predator_active as u8,
+    });
+    let wander = scene.wander.map(|w| CWanderState {
+        center: w.center.into(),
+        heading: w.heading.into(),
+    });
+    let ripple = scene.ripple.as_ref().and_then(|r| {
+        let trains: [CRippleTrain; 3] = r
+            .trains
+            .iter()
+            .map(|t| CRippleTrain {
+                origin: t.origin.into(),
+                radius: t.radius,
+                phase: t.phase,
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .ok()?;
+        Some(CRippleState { trains })
+    });
     CCheckpoint {
         session_id: cp.session_id,
         step_count: cp.step_count,
@@ -659,6 +937,16 @@ pub unsafe extern "C" fn murmur_checkpoint_buffer_get(
         boids: c_boids.as_ptr(),
         predator_count: c_predators.len() as u32,
         predators: c_predators.as_ptr(),
+        has_environment: environment.is_some() as u8,
+        environment: environment.unwrap_or(zeroed.environment),
+        has_wander: wander.is_some() as u8,
+        wander: wander.unwrap_or(zeroed.wander),
+        has_ripple: ripple.is_some() as u8,
+        ripple: ripple.unwrap_or(zeroed.ripple),
+        has_dynamic_vision_range: scene.dynamic_vision_range.is_some() as u8,
+        dynamic_vision_range: scene.dynamic_vision_range.unwrap_or(0.0),
+        obstacle_count: c_obstacles.len() as u32,
+        obstacles: c_obstacles.as_ptr(),
     }
 }
 
@@ -994,7 +1282,12 @@ mod tests {
     fn repr_c_struct_sizes_and_alignments_are_stable_on_this_platform() {
         assert_eq!(size_of::<CVec3>(), 24);
         assert_eq!(align_of::<CVec3>(), 8);
-        assert_eq!(size_of::<CBoidSnapshot>(), size_of::<CVec3>() * 2 + 8 + 8); // padding-aware
+        // 104, not the pre-checkpoint-field-wiring 64: two CVec3 (48) + species_code/theta (2
+        // padded to 8 + 8 = 16) + 6 `has_x: u8`/`x: {u8, f32}` pairs (5 f32 pairs at 8 bytes
+        // each via alignment padding + 1 u8 pair, 40) -- a real, disclosed schema growth
+        // (design/05_viz_contract.md §2.1's state/speed_mult/threat_proximity/panic/
+        // blackening/spin), not a regression.
+        assert_eq!(size_of::<CBoidSnapshot>(), 104);
         assert_eq!(align_of::<CBoidSnapshot>(), 8);
         assert_eq!(align_of::<CCheckpoint>(), 8);
         assert_eq!(align_of::<CMetrics>(), 8);

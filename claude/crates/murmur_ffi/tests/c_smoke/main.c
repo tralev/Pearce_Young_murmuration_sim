@@ -35,6 +35,13 @@ int main(void) {
     config.init_seed = 7;
     config.spawn_headroom = 0;
 
+    /* Composes two StepHooks whose own checkpoint fields this smoke test verifies below --
+     * proving the new per-boid/scene-level CCheckpoint fields (design/05_viz_contract.md §2.1/
+     * §2.2) are genuinely reachable from real C, not just from murmur_ffi's own Rust tests. */
+    const char *hooks[2] = {"boid_state_machine", "ecology"};
+    config.step_hooks = hooks;
+    config.step_hooks_len = 2;
+
     struct MurmurSimulation *sim = murmur_create(&config);
     if (sim == NULL) {
         fprintf(stderr, "murmur_create failed: %s\n", murmur_last_error_message());
@@ -75,6 +82,16 @@ int main(void) {
             fprintf(stderr, "boid %u position.x is NaN\n", i);
             return 1;
         }
+        if (!cp.boids[i].has_state) {
+            fprintf(stderr, "boid %u has no state -- boid_state_machine's own checkpoint field "
+                            "didn't reach C\n", i);
+            return 1;
+        }
+    }
+    if (!cp.has_environment) {
+        fprintf(stderr, "checkpoint has no environment -- ecology's own checkpoint field "
+                        "didn't reach C\n");
+        return 1;
     }
 
     murmur_checkpoint_buffer_destroy(buffer);

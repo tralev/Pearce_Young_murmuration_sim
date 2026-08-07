@@ -202,3 +202,26 @@ parallel-seam half nor G2 needed; "kinematic surface correction" is a soft avoid
 positional clamp, verified end to end: a flock spawned straddling a placed sphere demonstrably
 moves out of it. G2 (a post-integration position-correction seam for *pairwise* boid–boid
 collision) remains the one open architectural gap — no named plugin in the catalogue needs it.
+
+**Post-Phase-18 audit pass (2026-08-07).** A full-repository audit (fresh build/test/clippy/fmt,
+every plugin crate's own wiring, a `design/*.md` alignment check) found the codebase otherwise
+clean, plus three real, worth-fixing items: `murmur_young::register()` was the one plugin in the
+whole catalogue still panicking on a malformed override instead of falling back to defaults
+(fixed); `batch.rs`'s own module doc and `Command::AddObstacle`/`SetEnvironment` doc comments
+still said "no `obstacles`/`ecology` plugin exists yet" — true when written, false since Phase 18
+(fixed); and `design/05_viz_contract.md`'s own checkpoint schema (`state`/`speed_mult`/
+`threat_proximity`/`panic`/`blackening`/`spin`/`environment`/`obstacles`/`wander`/`ripple`/
+`dynamic_vision_range`) was never actually wired into `Checkpoint`, even though every producing
+plugin now exists. Fixed generically: `StepHook`/`SteeringModifier` both gained
+`checkpoint_boid_fields`/`checkpoint_scene_fields` default methods (`murmur_core` never
+references a specific plugin by name to collect them — each hook opts in on its own), `Checkpoint`
+now carries the merged result, `murmur_ffi`'s C ABI and `murmur_py`'s `Snapshot` were both
+extended to surface it (`CBoidSnapshot`/`CCheckpoint` gained `has_x`/`x` field pairs and new
+fixed-size structs for `CEnvironment`/`CWanderState`/`CRippleState`/`CObstacleNode`; `Snapshot`
+gained `boid_state`/`speed_mult`/`threat_proximity`/`panic`/`blackening`/`spin` NaN-sentinel
+arrays and a `scene` dict), and `murmur_ffi`'s own `full_registry()` — previously missing 8 of
+the plugins whose state it now carries — was brought up to date so the C ABI can actually compose
+them. `pipeline.rs`/`batch.rs`/`murmur_predator_fsm`'s own `#[cfg(test)]` modules (the project's
+three largest files) were split into sibling `tests.rs` files for navigability — no public API
+change. `design/01_core.md` §4.1's own promised cross-plugin `validate()` config-warning system
+remains a known, undisclosed-until-now gap — not built in this pass; see the open-items list.
