@@ -21,7 +21,7 @@ use crate::modes::{BoidCtx, FlockingMode, SteeringModifier};
 use crate::neighbor::NeighborSelection;
 use crate::occlusion::OcclusionScratch;
 use crate::params::{CoreParams, DT_MAX};
-use crate::registry::{PluginParams, Registry};
+use crate::registry::{PluginParams, Registry, Warning};
 use crate::rng::{self, sample_unit_sphere};
 use crate::spatial_index::SpatialIndex;
 use crate::speed_model::SpeedModel;
@@ -124,25 +124,63 @@ pub struct Composition<'a> {
 }
 
 impl Simulation {
-    /// Resolves every socket's plugin by name from `registry`, places the initial flock via
-    /// the chosen `Initializer`, and returns the constructed `Simulation` — or the first
-    /// `ConfigError` encountered (an unregistered name, including every name against an empty
-    /// `Registry`).
-    pub fn new(config: SimConfig, registry: &Registry) -> Result<Self, ConfigError> {
-        let mode = registry.resolve_mode(&config.mode, &config.plugin_params)?;
-        let modifier = registry.resolve_modifier(&config.modifier, &config.plugin_params)?;
-        let domain = registry.resolve_domain(&config.domain, &config.plugin_params)?;
-        let spatial_index =
+    /// Resolves every socket's plugin by name from `registry`, runs each socket's
+    /// `validate_and_fix` (design/01_core.md §4.1 — self-correcting non-critical
+    /// inconsistencies like `HashGrid`'s `cell_size` vs `CoreParams.vision_radius`), places
+    /// the initial flock via the chosen `Initializer`, and returns the constructed
+    /// `Simulation` plus every `Warning` collected along the way — or the first `ConfigError`
+    /// encountered (an unregistered name, including every name against an empty `Registry`).
+    /// Warnings are never fatal; a hard-invalid combination is still rejected earlier, at a
+    /// plugin's own `PluginParams` resolution.
+    pub fn new(
+        config: SimConfig,
+        registry: &Registry,
+    ) -> Result<(Self, Vec<Warning>), ConfigError> {
+        let mut mode = registry.resolve_mode(&config.mode, &config.plugin_params)?;
+        let mut modifier = registry.resolve_modifier(&config.modifier, &config.plugin_params)?;
+        let mut domain = registry.resolve_domain(&config.domain, &config.plugin_params)?;
+        let mut spatial_index =
             registry.resolve_spatial_index(&config.spatial_index, &config.plugin_params)?;
-        let neighbor_selection = registry
+        let mut neighbor_selection = registry
             .resolve_neighbor_selection(&config.neighbor_selection, &config.plugin_params)?;
-        let speed_model =
+        let mut speed_model =
             registry.resolve_speed_model(&config.speed_model, &config.plugin_params)?;
-        let init = registry.resolve_init(&config.init, &config.plugin_params)?;
-        let noise = registry.resolve_noise(&config.noise, &config.plugin_params)?;
+        let mut init = registry.resolve_init(&config.init, &config.plugin_params)?;
+        let mut noise = registry.resolve_noise(&config.noise, &config.plugin_params)?;
         let mut step_hooks = Vec::with_capacity(config.step_hooks.len());
         for name in &config.step_hooks {
             step_hooks.push(registry.resolve_step_hook(name, &config.plugin_params)?);
+        }
+
+        let mut warnings = Vec::new();
+        {
+            // A frozen snapshot of every socket's own resolved config, taken before any
+            // socket's `validate_and_fix` runs — deliberately not a live view of the other
+            // boxed trait objects, so mutating one socket here never needs to alias another.
+            let others: [(&str, PluginParams); 8] = [
+                (config.mode.as_str(), mode.resolved_params()),
+                (config.modifier.as_str(), modifier.resolved_params()),
+                (config.domain.as_str(), domain.resolved_params()),
+                (
+                    config.spatial_index.as_str(),
+                    spatial_index.resolved_params(),
+                ),
+                (
+                    config.neighbor_selection.as_str(),
+                    neighbor_selection.resolved_params(),
+                ),
+                (config.speed_model.as_str(), speed_model.resolved_params()),
+                (config.init.as_str(), init.resolved_params()),
+                (config.noise.as_str(), noise.resolved_params()),
+            ];
+            warnings.extend(mode.validate_and_fix(&config.core_params, &others));
+            warnings.extend(modifier.validate_and_fix(&config.core_params, &others));
+            warnings.extend(domain.validate_and_fix(&config.core_params, &others));
+            warnings.extend(spatial_index.validate_and_fix(&config.core_params, &others));
+            warnings.extend(neighbor_selection.validate_and_fix(&config.core_params, &others));
+            warnings.extend(speed_model.validate_and_fix(&config.core_params, &others));
+            warnings.extend(init.validate_and_fix(&config.core_params, &others));
+            warnings.extend(noise.validate_and_fix(&config.core_params, &others));
         }
 
         let mut boids = BoidColumns::with_capacity(
@@ -183,7 +221,7 @@ impl Simulation {
         ];
         let build_hash = crate::batch::fingerprint(&plugin_names_for_hash, &config.core_params);
 
-        Ok(Simulation {
+        let simulation = Simulation {
             boids,
             core_params: config.core_params,
             domain,
@@ -211,7 +249,8 @@ impl Simulation {
             checkpoint_stride: 1,
             next_boid_seed: n as u64,
             accum_max_displacement: 0.0,
-        })
+        };
+        Ok((simulation, warnings))
     }
 
     pub fn boid_count(&self) -> u32 {

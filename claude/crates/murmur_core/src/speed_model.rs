@@ -13,7 +13,7 @@
 use crate::boids::Species;
 use crate::math::{Vec3, MIN_LEN};
 use crate::params::CoreParams;
-use crate::registry::{PluginParams, Registry};
+use crate::registry::{PluginParams, Registry, Warning};
 use crate::rng::{sample_unit_sphere, Rng};
 
 pub trait SpeedModel: Send + Sync {
@@ -38,6 +38,20 @@ pub trait SpeedModel: Send + Sync {
         rng: &mut Rng,
     );
     fn name(&self) -> &'static str;
+
+    /// See `FlockingMode::resolved_params` (modes.rs) — same seam, same default.
+    fn resolved_params(&self) -> PluginParams {
+        PluginParams::new()
+    }
+
+    /// See `FlockingMode::validate_and_fix` (modes.rs) — same seam, same default, same timing.
+    fn validate_and_fix(
+        &mut self,
+        _core: &CoreParams,
+        _others: &[(&str, PluginParams)],
+    ) -> Vec<Warning> {
+        Vec::new()
+    }
 }
 
 /// Exact renormalisation to `[speed_min_factor·v0, v0]` for prey, `[0, predator_speed_factor·v0]`

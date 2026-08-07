@@ -204,6 +204,29 @@ def test_describe_reports_the_default_plugin_selection():
     assert desc["boid_count"] == 10
 
 
+def test_warnings_is_empty_when_cell_size_already_matches_vision_radius():
+    sim = make_sim(10)
+    assert sim.warnings() == []
+
+
+def test_warnings_reports_a_mismatched_cell_size_snapped_to_vision_radius():
+    # design/01_core.md §4.1's own named example, exercised through the real Python
+    # constructor: a cell_size that disagrees with vision_radius is non-fatal (construction
+    # still succeeds), silently corrected, and reported back here.
+    sim = m.Simulation(
+        boid_count=10,
+        vision_radius=10.0,
+        body_radius=0.5,
+        init_radius=15.0,
+        init_seed=1,
+        cell_size=3.0,
+    )
+    warnings = sim.warnings()
+    assert len(warnings) == 1
+    assert "hash_grid" in warnings[0]
+    assert "cell_size" in warnings[0]
+
+
 def test_invalid_params_raise_value_error_not_panic():
     with pytest.raises(ValueError):
         m.Simulation(boid_count=10, cruise_speed=-1.0)

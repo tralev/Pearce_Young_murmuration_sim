@@ -53,7 +53,7 @@ fn build_sim(n: u32, noise_amplitude: f64) -> Simulation {
         predator_count: 0,
         spawn_headroom: 0,
     };
-    Simulation::new(config, &registry).unwrap()
+    Simulation::new(config, &registry).unwrap().0
 }
 
 #[test]

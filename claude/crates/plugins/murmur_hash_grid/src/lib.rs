@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use murmur_core::{BoidColumns, PluginParams, Registry, SpatialIndex, Vec3};
+use murmur_core::{BoidColumns, CoreParams, PluginParams, Registry, SpatialIndex, Vec3, Warning};
 
 pub struct HashGrid {
     cell_size: f64,
@@ -98,11 +98,44 @@ impl SpatialIndex for HashGrid {
     fn name(&self) -> &'static str {
         "hash_grid"
     }
+
+    fn resolved_params(&self) -> PluginParams {
+        PluginParams::new().with("cell_size", self.cell_size)
+    }
+
+    /// design/01_core.md §4.1's own named example: a `cell_size` set independently of
+    /// `vision_radius` is a non-critical inconsistency (this index still works at any
+    /// `cell_size` — `candidates()` is a correctness-preserving superset sweep regardless, see
+    /// its own doc comment — just at a worse than necessary `O((r/cell_size)³)` sweep cost),
+    /// so it's silently snapped to match rather than rejected. Exact-equality comparison is
+    /// deliberate, not a numerical-tolerance oversight: both values are always literal,
+    /// author-supplied doubles (a `PluginParams` override or a builder default), never a
+    /// computed quantity that could carry rounding error.
+    fn validate_and_fix(
+        &mut self,
+        core: &CoreParams,
+        _others: &[(&str, PluginParams)],
+    ) -> Vec<Warning> {
+        if self.cell_size != core.vision_radius {
+            let old = self.cell_size;
+            self.cell_size = core.vision_radius;
+            vec![Warning {
+                plugin: self.name(),
+                message: format!(
+                    "cell_size ({old}) disagreed with vision_radius ({}); snapped to match \
+                     (design/01_core.md §4.1)",
+                    core.vision_radius
+                ),
+            }]
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 /// Registers `HashGrid` under the name `"hash_grid"`, reading `cell_size` from `PluginParams`
-/// (default `1.0` if unset — a real `Simulation` construction snaps this to `vision_radius`
-/// per design/01_core.md §4.1's cross-plugin consistency validation, a later phase's concern).
+/// (default `1.0` if unset). A real `Simulation` construction runs `validate_and_fix` above
+/// afterward, snapping a mismatched `cell_size` to `vision_radius` (design/01_core.md §4.1).
 pub fn register(r: &mut Registry) {
     r.register_spatial_index("hash_grid", |p: &PluginParams| {
         Box::new(HashGrid::new(p.get_or("cell_size", 1.0)))
@@ -227,6 +260,40 @@ mod tests {
         let boids = BoidColumns::with_capacity(4);
         let mut grid = HashGrid::new(1.0);
         murmur_conformance::spatial_index(&mut grid, &boids);
+    }
+
+    fn core_params_with_vision_radius(vision_radius: f64) -> murmur_core::CoreParams {
+        murmur_core::CoreParams::builder()
+            .vision_radius(vision_radius)
+            .boid_count(1)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn validate_and_fix_snaps_a_mismatched_cell_size_to_vision_radius_and_warns() {
+        let mut grid = HashGrid::new(3.0);
+        let core = core_params_with_vision_radius(7.0);
+        let warnings = grid.validate_and_fix(&core, &[]);
+        assert_eq!(grid.cell_size, 7.0, "cell_size should be snapped in place");
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].plugin, "hash_grid");
+        assert!(warnings[0].message.contains("cell_size"));
+    }
+
+    #[test]
+    fn validate_and_fix_is_silent_when_cell_size_already_matches_vision_radius() {
+        let mut grid = HashGrid::new(7.0);
+        let core = core_params_with_vision_radius(7.0);
+        let warnings = grid.validate_and_fix(&core, &[]);
+        assert_eq!(grid.cell_size, 7.0);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn resolved_params_reports_the_live_cell_size() {
+        let grid = HashGrid::new(4.5);
+        assert_eq!(grid.resolved_params().get("cell_size"), Some(4.5));
     }
 
     #[test]

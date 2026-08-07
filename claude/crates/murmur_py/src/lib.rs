@@ -229,6 +229,12 @@ impl PyCommand {
 #[pyclass(name = "Simulation")]
 struct PySimulation {
     inner: Simulation,
+    /// Every non-fatal `Warning` collected at construction (design/01_core.md §4.1) — e.g.
+    /// `HashGrid`'s `cell_size` snapped to `vision_radius`. Formatted once here (`"<plugin>:
+    /// <message>"`, matching `murmur_ffi`'s own `murmur_warning_message`) rather than kept as
+    /// `murmur_core::Warning`, since `Warning` has no `#[pyclass]` and a plain string list is
+    /// all a Python caller needs.
+    warnings: Vec<String>,
 }
 
 #[pymethods]
@@ -793,8 +799,12 @@ impl PySimulation {
         };
 
         let registry = build_registry();
-        let inner = Simulation::new(config, &registry).map_err(map_config_error)?;
-        Ok(PySimulation { inner })
+        let (inner, warnings) = Simulation::new(config, &registry).map_err(map_config_error)?;
+        let warnings = warnings
+            .iter()
+            .map(|w| format!("{}: {}", w.plugin, w.message))
+            .collect();
+        Ok(PySimulation { inner, warnings })
     }
 
     fn step(&mut self, dt: f64, seed: u64) {
@@ -881,6 +891,13 @@ impl PySimulation {
 
     fn boid_count(&self) -> u32 {
         self.inner.boid_count()
+    }
+
+    /// Non-fatal `Warning`s collected once at construction (design/01_core.md §4.1), each
+    /// formatted `"<plugin>: <message>"` — e.g. `HashGrid`'s `cell_size` snapped to
+    /// `vision_radius`. Empty for a composition with nothing to report.
+    fn warnings(&self) -> Vec<String> {
+        self.warnings.clone()
     }
 
     fn step_count(&self) -> u64 {

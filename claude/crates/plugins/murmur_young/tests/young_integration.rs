@@ -48,7 +48,7 @@ fn build_sim(n: u32, seed: u64, refresh_interval: f64) -> Simulation {
         predator_count: 0,
         spawn_headroom: 0,
     };
-    Simulation::new(config, &registry).unwrap()
+    Simulation::new(config, &registry).unwrap().0
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn different_m_fallback_values_produce_different_trajectories_when_never_refresh
             predator_count: 0,
             spawn_headroom: 0,
         };
-        Simulation::new(config, &registry).unwrap()
+        Simulation::new(config, &registry).unwrap().0
     };
 
     let mut m2 = build_with_fallback(2.0, 4);

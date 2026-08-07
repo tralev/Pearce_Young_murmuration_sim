@@ -59,7 +59,7 @@ fn build_sim(n: u32, predator_count: u32, seed: u64, init_radius: f64) -> Simula
         predator_count,
         spawn_headroom: 0,
     };
-    Simulation::new(config, &registry).unwrap()
+    Simulation::new(config, &registry).unwrap().0
 }
 
 fn species_split(sim: &Simulation) -> (Vec<usize>, Vec<usize>) {

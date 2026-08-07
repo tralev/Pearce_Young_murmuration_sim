@@ -42,7 +42,7 @@ pub use neighbor::{Neighbor, NeighborSelection};
 pub use occlusion::{occlude, OcclusionScratch, VisibleView};
 pub use params::{CoreParams, OcclusionParams, DT_MAX};
 pub use pipeline::{Composition, SimConfig, Simulation};
-pub use registry::{PluginParams, Registry};
+pub use registry::{PluginParams, Registry, Warning};
 pub use rng::{sample_unit_sphere, uniform01, Rng};
 pub use spatial_index::SpatialIndex;
 pub use speed_model::SpeedModel;

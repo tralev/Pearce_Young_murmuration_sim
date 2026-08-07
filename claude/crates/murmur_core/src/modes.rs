@@ -18,6 +18,7 @@ use crate::math::Vec3;
 use crate::neighbor::Neighbor;
 use crate::occlusion::OcclusionScratch;
 use crate::params::CoreParams;
+use crate::registry::{PluginParams, Warning};
 use crate::rng::Rng;
 use crate::step_hook::BoidCheckpointFields;
 
@@ -80,6 +81,35 @@ pub trait FlockingMode: Send + Sync {
         rng: &mut Rng,
     ) -> SteerIntent;
     fn name(&self) -> &'static str;
+
+    /// This plugin's own resolved config, as a flat key/value map — design/01_core.md §4.1's
+    /// `Composition.plugin_params` introspection seam, reusing `PluginParams` itself as the
+    /// erasure rather than inventing the doc's own named-but-never-defined
+    /// `ErasedPluginParams` (`PluginParams` is already exactly that shape). Default empty — a
+    /// plugin only needs to override this if some *other* plugin's `validate_and_fix` might
+    /// reasonably want to compare against one of its fields.
+    fn resolved_params(&self) -> PluginParams {
+        PluginParams::new()
+    }
+
+    /// Runs once at construction, after every socket is built (`Simulation::new()`), so this
+    /// plugin can check its own resolved config against `CoreParams` and every co-composed
+    /// socket's `resolved_params()` snapshot, self-correcting non-critical inconsistencies in
+    /// place and reporting what it changed (design/01_core.md §4.1 — e.g. `HashGrid`'s
+    /// `cell_size` snapped to `CoreParams.vision_radius`). `others` is a frozen snapshot taken
+    /// before any socket's `validate_and_fix` runs, not a live view of the other trait
+    /// objects — deliberately, so mutating `self` here never needs to alias another boxed
+    /// plugin. Never fatal: a hard-invalid combination is still rejected earlier, at that
+    /// plugin's own `PluginParams` resolution (e.g. `PearceParamsBuilder::build()` already
+    /// rejects `phi_p + phi_a > 1.0`). Default no-op, matching every prior lazily-added seam
+    /// (D22b) — a plugin with nothing to compare against costs nothing here.
+    fn validate_and_fix(
+        &mut self,
+        _core: &CoreParams,
+        _others: &[(&str, PluginParams)],
+    ) -> Vec<Warning> {
+        Vec::new()
+    }
 }
 
 pub trait SteeringModifier: Send + Sync {
@@ -95,5 +125,20 @@ pub trait SteeringModifier: Send + Sync {
     /// version of this method.
     fn checkpoint_boid_fields(&self, _index: u32) -> BoidCheckpointFields {
         BoidCheckpointFields::default()
+    }
+
+    /// See `FlockingMode::resolved_params` — same seam, same default.
+    fn resolved_params(&self) -> PluginParams {
+        PluginParams::new()
+    }
+
+    /// See `FlockingMode::validate_and_fix` — same seam, same default, same timing
+    /// (`Simulation::new()`, once, after every socket is built).
+    fn validate_and_fix(
+        &mut self,
+        _core: &CoreParams,
+        _others: &[(&str, PluginParams)],
+    ) -> Vec<Warning> {
+        Vec::new()
     }
 }

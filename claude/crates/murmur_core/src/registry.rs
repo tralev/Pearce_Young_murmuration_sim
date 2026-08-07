@@ -41,6 +41,18 @@ impl PluginParams {
     }
 }
 
+/// A non-fatal, construction-time self-correction a plugin made (or flagged) while validating
+/// itself against `CoreParams`/its co-composed sockets (design/01_core.md §4.1). `plugin` is
+/// the same name a `Registry` factory is keyed under (`self.name()`); nothing here is fatal —
+/// a hard-invalid combination is still a `ConfigError` from the plugin's own `PluginParams`
+/// resolution (e.g. `PearceParamsBuilder::build()` already rejects `phi_p + phi_a > 1.0`),
+/// unchanged by this addition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Warning {
+    pub plugin: &'static str,
+    pub message: String,
+}
+
 type ModeFactory = fn(&PluginParams) -> Box<dyn FlockingMode>;
 type ModifierFactory = fn(&PluginParams) -> Box<dyn SteeringModifier>;
 type DomainFactory = fn(&PluginParams) -> Box<dyn Domain>;

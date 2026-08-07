@@ -56,7 +56,7 @@ fn build_sim(n: u32, seed: u64, hours_per_dt: f64, coherence_strength: f64) -> S
         predator_count: 0,
         spawn_headroom: 0,
     };
-    Simulation::new(config, &registry).unwrap()
+    Simulation::new(config, &registry).unwrap().0
 }
 
 #[test]

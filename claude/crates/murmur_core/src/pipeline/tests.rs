@@ -197,7 +197,7 @@ fn empty_registry_makes_new_fail_not_panic() {
 fn fully_registered_dummy_composition_constructs_successfully() {
     let mut registry = Registry::new();
     register_all_dummies(&mut registry);
-    let sim = Simulation::new(dummy_config(), &registry).unwrap();
+    let (sim, _warnings) = Simulation::new(dummy_config(), &registry).unwrap();
     assert_eq!(sim.boid_count(), 5);
     assert_eq!(sim.step_count(), 0);
     let names = sim.plugin_names();
@@ -229,7 +229,7 @@ fn built_dummy_sim(n: u32) -> Simulation {
     register_all_dummies(&mut registry);
     let mut config = dummy_config();
     config.core_params = CoreParams::builder().boid_count(n).build().unwrap();
-    Simulation::new(config, &registry).unwrap()
+    Simulation::new(config, &registry).unwrap().0
 }
 
 #[test]
@@ -338,7 +338,7 @@ fn step_hooks_execute_in_registration_order() {
     let mut config = dummy_config();
     config.core_params = CoreParams::builder().boid_count(1).build().unwrap();
     config.step_hooks = vec!["hook_a".to_string(), "hook_b".to_string()];
-    let mut sim = Simulation::new(config, &registry).unwrap();
+    let (mut sim, _warnings) = Simulation::new(config, &registry).unwrap();
 
     sim.step(1.0, 1);
 
@@ -376,7 +376,7 @@ fn a_step_hooks_speed_cap_multiplier_is_actually_enforced_by_the_speed_model() {
         .build()
         .unwrap();
     config.step_hooks = vec!["cap_hook".to_string()];
-    let mut sim = Simulation::new(config, &registry).unwrap();
+    let (mut sim, _warnings) = Simulation::new(config, &registry).unwrap();
 
     sim.step(1.0, 1); // DummyInit starts every boid at speed = cruise_speed = 10.0
 
@@ -410,7 +410,7 @@ fn multiple_hooks_speed_cap_multipliers_combine_via_min() {
         .build()
         .unwrap();
     config.step_hooks = vec!["loose_cap".to_string(), "tight_cap".to_string()];
-    let mut sim = Simulation::new(config, &registry).unwrap();
+    let (mut sim, _warnings) = Simulation::new(config, &registry).unwrap();
 
     sim.step(1.0, 1);
 
@@ -467,7 +467,7 @@ fn post_steers_ctx_neighbors_is_real_not_a_hardcoded_empty_placeholder() {
         .build()
         .unwrap();
     config.step_hooks = vec!["neighbor_counting_hook".to_string()];
-    let mut sim = Simulation::new(config, &registry).unwrap();
+    let (mut sim, _warnings) = Simulation::new(config, &registry).unwrap();
 
     sim.step(1.0, 1);
 
@@ -512,12 +512,12 @@ fn post_steers_rng_argument_is_real_and_tied_to_base_seed() {
     });
 
     RNG_DRAW_LOG.lock().unwrap().clear();
-    let mut sim_a = Simulation::new(rng_drawing_config(), &registry).unwrap();
+    let (mut sim_a, _warnings) = Simulation::new(rng_drawing_config(), &registry).unwrap();
     sim_a.step(1.0, 42);
     let draws_a = RNG_DRAW_LOG.lock().unwrap().clone();
 
     RNG_DRAW_LOG.lock().unwrap().clear();
-    let mut sim_a_repeat = Simulation::new(rng_drawing_config(), &registry).unwrap();
+    let (mut sim_a_repeat, _warnings) = Simulation::new(rng_drawing_config(), &registry).unwrap();
     sim_a_repeat.step(1.0, 42);
     let draws_a_repeat = RNG_DRAW_LOG.lock().unwrap().clone();
     assert_eq!(
@@ -526,7 +526,7 @@ fn post_steers_rng_argument_is_real_and_tied_to_base_seed() {
     );
 
     RNG_DRAW_LOG.lock().unwrap().clear();
-    let mut sim_b = Simulation::new(rng_drawing_config(), &registry).unwrap();
+    let (mut sim_b, _warnings) = Simulation::new(rng_drawing_config(), &registry).unwrap();
     sim_b.step(1.0, 99);
     let draws_b = RNG_DRAW_LOG.lock().unwrap().clone();
     assert_ne!(

@@ -53,7 +53,7 @@ fn build_sim(n: u32, predator_count: u32, seed: u64) -> Simulation {
         predator_count,
         spawn_headroom: 0,
     };
-    Simulation::new(config, &registry).unwrap()
+    Simulation::new(config, &registry).unwrap().0
 }
 
 fn predator_and_prey_state(sim: &Simulation) -> (Vec<usize>, Vec<usize>) {

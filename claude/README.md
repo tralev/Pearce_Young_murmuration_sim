@@ -223,5 +223,32 @@ arrays and a `scene` dict), and `murmur_ffi`'s own `full_registry()` — previou
 the plugins whose state it now carries — was brought up to date so the C ABI can actually compose
 them. `pipeline.rs`/`batch.rs`/`murmur_predator_fsm`'s own `#[cfg(test)]` modules (the project's
 three largest files) were split into sibling `tests.rs` files for navigability — no public API
-change. `design/01_core.md` §4.1's own promised cross-plugin `validate()` config-warning system
-remains a known, undisclosed-until-now gap — not built in this pass; see the open-items list.
+change.
+
+**`design/01_core.md` §4.1's cross-plugin `validate()` (2026-08-07, same day).** The one item the
+audit above left deliberately open, built as its own follow-up. The doc's two named examples
+(`phi_p + phi_a > 1.0` rejected, `HashGrid`'s `cell_size` silently snapped to `vision_radius`)
+turned out to both be single-plugin self-checks, not true plugin-vs-plugin comparisons — the
+`phi_p + phi_a` one was already handled by `PearceParamsBuilder::build()`'s own existing
+rejection, so the only real gap was the `cell_size` clamp. Built generically anyway, ready for a
+real cross-plugin pair when one is proposed: all 8 socket traits (`FlockingMode`,
+`SteeringModifier`, `Domain`, `SpatialIndex`, `NeighborSelection`, `SpeedModel`, `Initializer`,
+`NoiseSource`) gained default `resolved_params(&self) -> PluginParams` (reusing the existing
+`PluginParams(HashMap<String, f64>)` as the erasure, rather than inventing the doc's
+named-but-never-defined `ErasedPluginParams`) and `validate_and_fix(&mut self, core: &CoreParams,
+others: &[(&str, PluginParams)]) -> Vec<Warning>` methods. `Simulation::new()` now snapshots every
+socket's `resolved_params()` before any correction runs (so mutating one socket never needs to
+alias another's live trait object), then calls each `validate_and_fix` in turn and returns
+`Result<(Self, Vec<Warning>), ConfigError>` — a signature change that touched every call site in
+the workspace. `HashGrid` is the one live implementer: a `cell_size` that disagrees with
+`vision_radius` is corrected in place and reported, never rejected. Surfaced through both
+consumer surfaces: `murmur_ffi` gained `murmur_warning_count`/`murmur_warning_message` (mirroring
+the existing `murmur_last_error_message` convention), and `murmur_py`'s `Simulation` gained a
+`warnings()` method. Verified end-to-end (not just unit-level) with a real `Simulation`
+composition, the C smoke test, and a Python test, each deliberately setting a mismatched
+`cell_size` and checking the correction + `Warning` both land.
+
+569 Rust tests (up from 565), 108 pytest tests (up from 106). `design/01_core.md` §4.1 is now
+fully closed. What's still open: `Command::AddObstacle`/`RemoveObstacle`/`SetEnvironment`'s live
+write-routing, native H₂/`RequestMetric` routing (`consensus_degree`/`h2_result`), and G2
+(pairwise boid–boid collision) — no named plugin needs it yet.

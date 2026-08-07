@@ -4,6 +4,8 @@
 
 use crate::boids::BoidColumns;
 use crate::math::Vec3;
+use crate::params::CoreParams;
+use crate::registry::{PluginParams, Warning};
 
 pub trait SpatialIndex: Send + Sync {
     /// Rebuilds the index from current boid positions. Typically O(N); called once per step
@@ -32,4 +34,20 @@ pub trait SpatialIndex: Send + Sync {
     }
 
     fn name(&self) -> &'static str;
+
+    /// See `FlockingMode::resolved_params` (modes.rs) — same seam, same default.
+    fn resolved_params(&self) -> PluginParams {
+        PluginParams::new()
+    }
+
+    /// See `FlockingMode::validate_and_fix` (modes.rs) — same seam, same default, same timing.
+    /// `HashGrid` is the one concrete implementer (its own `cell_size` vs
+    /// `CoreParams.vision_radius`, design/01_core.md §4.1's own named example).
+    fn validate_and_fix(
+        &mut self,
+        _core: &CoreParams,
+        _others: &[(&str, PluginParams)],
+    ) -> Vec<Warning> {
+        Vec::new()
+    }
 }

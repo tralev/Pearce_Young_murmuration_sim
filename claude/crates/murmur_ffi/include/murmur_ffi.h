@@ -302,6 +302,26 @@ typedef struct CCommand {
  const char *murmur_plugin_name(const struct MurmurSimulation *sim, uint32_t socket_index);
 
 /**
+ * Count of non-fatal construction-time `Warning`s (design/01_core.md §4.1) — e.g. `HashGrid`'s
+ * `cell_size` snapped to `vision_radius`. `0` for a composition with nothing to report; never
+ * affects whether `murmur_create` returned a live pointer (warnings are advisory, not errors).
+ *
+ * # Safety
+ * `sim` must be a live pointer from `murmur_create`.
+ */
+ uint32_t murmur_warning_count(const struct MurmurSimulation *sim);
+
+/**
+ * One construction-time warning's message, formatted as `"<plugin>: <message>"`. Returns null
+ * if `index` is out of range.
+ *
+ * # Safety
+ * `sim` must be a live pointer from `murmur_create`. The returned pointer is valid until
+ * `murmur_destroy(sim)`.
+ */
+ const char *murmur_warning_message(const struct MurmurSimulation *sim, uint32_t index);
+
+/**
  * # Safety
  * `sim` must be a live pointer from `murmur_create`.
  */

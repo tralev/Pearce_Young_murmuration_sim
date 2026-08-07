@@ -171,6 +171,15 @@ pub struct MurmurSimulation {
     /// Populated by the most recent `murmur_run_batch`/`murmur_run_batch_with_budget` call
     /// that returned a nonzero (validation-error) status; cleared on the next successful call.
     last_command_errors: Vec<CString>,
+    /// Every `Warning` `Simulation::new()` collected at construction (design/01_core.md §4.1)
+    /// — e.g. `HashGrid`'s `cell_size` snapped to `vision_radius`. Fixed for this simulation's
+    /// whole lifetime, unlike `last_command_errors` (never mutated after `murmur_create`).
+    warning_cache: Vec<CString>,
+}
+
+fn format_warning(w: &murmur_core::Warning) -> CString {
+    CString::new(format!("{}: {}", w.plugin, w.message))
+        .unwrap_or_else(|_| CString::new("<invalid warning message>").unwrap())
 }
 
 /// # Safety
@@ -277,7 +286,7 @@ pub unsafe extern "C" fn murmur_create(config: *const MurmurConfig) -> *mut Murm
 
     let registry = full_registry();
     match Simulation::new(sim_config, &registry) {
-        Ok(inner) => {
+        Ok((inner, warnings)) => {
             let plugin_name_cache = inner
                 .plugin_names()
                 .iter()
@@ -285,10 +294,12 @@ pub unsafe extern "C" fn murmur_create(config: *const MurmurConfig) -> *mut Murm
                     CString::new(name).unwrap_or_else(|_| CString::new("<invalid>").unwrap())
                 })
                 .collect();
+            let warning_cache = warnings.iter().map(format_warning).collect();
             Box::into_raw(Box::new(MurmurSimulation {
                 inner,
                 plugin_name_cache,
                 last_command_errors: Vec::new(),
+                warning_cache,
             }))
         }
         Err(e) => {
@@ -326,6 +337,40 @@ pub unsafe extern "C" fn murmur_plugin_name(
     }
     let sim = &*sim;
     match sim.plugin_name_cache.get(socket_index as usize) {
+        Some(s) => s.as_ptr(),
+        None => ptr::null(),
+    }
+}
+
+/// Count of non-fatal construction-time `Warning`s (design/01_core.md §4.1) — e.g. `HashGrid`'s
+/// `cell_size` snapped to `vision_radius`. `0` for a composition with nothing to report; never
+/// affects whether `murmur_create` returned a live pointer (warnings are advisory, not errors).
+///
+/// # Safety
+/// `sim` must be a live pointer from `murmur_create`.
+#[no_mangle]
+pub unsafe extern "C" fn murmur_warning_count(sim: *const MurmurSimulation) -> u32 {
+    if sim.is_null() {
+        return 0;
+    }
+    (&*sim).warning_cache.len() as u32
+}
+
+/// One construction-time warning's message, formatted as `"<plugin>: <message>"`. Returns null
+/// if `index` is out of range.
+///
+/// # Safety
+/// `sim` must be a live pointer from `murmur_create`. The returned pointer is valid until
+/// `murmur_destroy(sim)`.
+#[no_mangle]
+pub unsafe extern "C" fn murmur_warning_message(
+    sim: *const MurmurSimulation,
+    index: u32,
+) -> *const c_char {
+    if sim.is_null() {
+        return ptr::null();
+    }
+    match (&*sim).warning_cache.get(index as usize) {
         Some(s) => s.as_ptr(),
         None => ptr::null(),
     }

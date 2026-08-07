@@ -211,13 +211,17 @@ fn config(n: u32, with_predator_hook: bool, spawn_headroom: u32) -> SimConfig {
 fn built_sim(n: u32, with_predator_hook: bool) -> Simulation {
     let mut registry = Registry::new();
     register_all_dummies(&mut registry);
-    Simulation::new(config(n, with_predator_hook, 0), &registry).unwrap()
+    Simulation::new(config(n, with_predator_hook, 0), &registry)
+        .unwrap()
+        .0
 }
 
 fn built_sim_with_headroom(n: u32, headroom: u32) -> Simulation {
     let mut registry = Registry::new();
     register_all_dummies(&mut registry);
-    Simulation::new(config(n, true, headroom), &registry).unwrap()
+    Simulation::new(config(n, true, headroom), &registry)
+        .unwrap()
+        .0
 }
 
 #[test]
@@ -415,7 +419,7 @@ fn capture_checkpoint_generically_collects_and_merges_every_hooks_own_fields() {
         "dummy_checkpoint_hook".to_string(),
         "dummy_spin_hook".to_string(),
     ];
-    let mut sim = Simulation::new(with_hooks, &registry).unwrap();
+    let (mut sim, _warnings) = Simulation::new(with_hooks, &registry).unwrap();
     let buffer = sim.run_batch_checked(1, 1, Vec::new()).unwrap();
     let checkpoint = &buffer.checkpoints[0];
 
@@ -429,7 +433,7 @@ fn capture_checkpoint_generically_collects_and_merges_every_hooks_own_fields() {
         assert_eq!(boid.checkpoint_fields.threat_proximity, None);
     }
 
-    let mut without_hooks = Simulation::new(config(3, false, 0), &registry).unwrap();
+    let (mut without_hooks, _warnings) = Simulation::new(config(3, false, 0), &registry).unwrap();
     let buffer2 = without_hooks.run_batch_checked(1, 1, Vec::new()).unwrap();
     let checkpoint2 = &buffer2.checkpoints[0];
     assert_eq!(checkpoint2.scene_fields.dynamic_vision_range, None);

@@ -26,8 +26,12 @@ int main(void) {
     config.dt = 1.0;
     config.vision_radius = 10.0;
 
+    /* cell_size deliberately disagrees with vision_radius (10.0) -- proves the
+     * design/01_core.md §4.1 construction-time Warning (HashGrid's own cell_size snapped to
+     * vision_radius) reaches real C via murmur_warning_count/murmur_warning_message, not just
+     * murmur_core's own Rust tests. */
     struct CKeyValue params[2] = {
-        {"cell_size", 10.0},
+        {"cell_size", 3.0},
         {"radius", 25.0},
     };
     config.plugin_params = params;
@@ -50,6 +54,18 @@ int main(void) {
 
     if (murmur_boid_count(sim) != 40) {
         fprintf(stderr, "unexpected boid_count\n");
+        return 1;
+    }
+
+    if (murmur_warning_count(sim) != 1) {
+        fprintf(stderr, "expected exactly 1 construction Warning (mismatched cell_size), got %u\n",
+                murmur_warning_count(sim));
+        return 1;
+    }
+    const char *warning = murmur_warning_message(sim, 0);
+    if (warning == NULL || strstr(warning, "cell_size") == NULL) {
+        fprintf(stderr, "warning message missing or doesn't mention cell_size: %s\n",
+                warning == NULL ? "(null)" : warning);
         return 1;
     }
 

@@ -53,7 +53,7 @@ fn build_sim(n: u32, seed: u64, init_radius: f64, target_neighbor_count: f64) ->
         predator_count: 0,
         spawn_headroom: 0,
     };
-    Simulation::new(config, &registry).unwrap()
+    Simulation::new(config, &registry).unwrap().0
 }
 
 #[test]

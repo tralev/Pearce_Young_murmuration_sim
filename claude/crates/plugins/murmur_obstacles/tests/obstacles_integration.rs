@@ -57,7 +57,7 @@ fn build_sim(n: u32, seed: u64) -> Simulation {
         predator_count: 0,
         spawn_headroom: 0,
     };
-    Simulation::new(config, &registry).unwrap()
+    Simulation::new(config, &registry).unwrap().0
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn a_flock_spawned_clear_of_the_obstacle_stays_clear() {
         predator_count: 0,
         spawn_headroom: 0,
     };
-    let mut sim = Simulation::new(config, &registry).unwrap();
+    let (mut sim, _warnings) = Simulation::new(config, &registry).unwrap();
     sim.run_batch(100, 1);
     let positions = sim.positions();
     let obstacle_center = murmur_core::Vec3::new(100.0, 0.0, 0.0);

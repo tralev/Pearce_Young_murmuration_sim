@@ -57,7 +57,7 @@ fn build_sim(n: u32, seed: u64) -> Simulation {
         predator_count: 0,
         spawn_headroom: 0,
     };
-    Simulation::new(config, &registry).unwrap()
+    Simulation::new(config, &registry).unwrap().0
 }
 
 #[test]
@@ -183,6 +183,53 @@ fn state_hash_is_identical_across_1_4_and_8_rayon_threads_for_the_real_compositi
         h1, h8,
         "state_hash differs between 1 and 8 threads (real composition)"
     );
+}
+
+/// design/01_core.md §4.1's own named example, exercised end-to-end through the real
+/// composition (not just `murmur_hash_grid`'s own unit tests): a `cell_size` override that
+/// disagrees with `vision_radius` gets silently snapped to match, reported as a `Warning`, and
+/// the resulting `Simulation` is fully usable — this is a non-fatal correction, not a
+/// `ConfigError`.
+#[test]
+fn a_mismatched_hash_grid_cell_size_is_snapped_to_vision_radius_and_warned_about() {
+    let registry = build_registry();
+    let core_params = CoreParams::builder()
+        .cruise_speed(1.0)
+        .max_force(1.0)
+        .speed_min_factor(0.3)
+        .boid_count(10)
+        .vision_radius(10.0)
+        .build()
+        .unwrap();
+    let mut plugin_params = murmuration_plugin_params();
+    plugin_params = plugin_params.with("cell_size", 3.0); // deliberately disagrees with vision_radius=10.0
+    let config = SimConfig {
+        mode: "pearce".to_string(),
+        modifier: "instant_response".to_string(),
+        domain: "open".to_string(),
+        spatial_index: "hash_grid".to_string(),
+        neighbor_selection: "radius_gather".to_string(),
+        speed_model: "band".to_string(),
+        init: "sphere_volume".to_string(),
+        noise: "uniform_sphere".to_string(),
+        core_params,
+        plugin_params,
+        init_seed: 1,
+        step_hooks: Vec::new(),
+        predator_count: 0,
+        spawn_headroom: 0,
+    };
+    let (mut sim, warnings) = Simulation::new(config, &registry).unwrap();
+    assert_eq!(
+        warnings.len(),
+        1,
+        "expected exactly one Warning, got {warnings:?}"
+    );
+    assert_eq!(warnings[0].plugin, "hash_grid");
+    assert!(warnings[0].message.contains("cell_size"));
+    // The corrected Simulation still runs fine — this is advisory, never fatal.
+    sim.step(1.0, 1);
+    assert!(sim.positions().iter().all(|p| p.is_finite()));
 }
 
 #[test]
