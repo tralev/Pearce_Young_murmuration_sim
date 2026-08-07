@@ -10,7 +10,7 @@
 //! slice used bare `HashGrid` only because N≤2,600 never approached the crossover
 //! (design/02_plugins.md §5's own note on this plugin).
 
-use murmur_core::{BoidColumns, PluginParams, Registry, SpatialIndex, Vec3};
+use murmur_core::{BoidColumns, CoreParams, PluginParams, Registry, SpatialIndex, Vec3, Warning};
 use murmur_hash_grid::HashGrid;
 use murmur_kdtree_index::KdTree;
 
@@ -72,6 +72,35 @@ impl SpatialIndex for AdaptiveIndex {
 
     fn name(&self) -> &'static str {
         "adaptive_index"
+    }
+
+    /// Proxies to the wrapped `HashGrid` — `KdTree` has no tunable params of its own to
+    /// report, and `cell_size` (forwarded to `hash_grid` at construction, see `register`'s own
+    /// doc) is the only thing here `design/01_core.md` §4.1's own validation could ever act on.
+    /// Without this override, composing `"adaptive_index"` instead of `"hash_grid"` directly
+    /// would silently hide that same `cell_size`-vs-`vision_radius` check — a real, previously-
+    /// disclosed gap this closes.
+    fn resolved_params(&self) -> PluginParams {
+        self.hash_grid.resolved_params()
+    }
+
+    /// Same proxying as `resolved_params`, plus remapping `Warning::plugin` from `"hash_grid"`
+    /// to `"adaptive_index"` — the composed socket name a caller of `Simulation::new()` would
+    /// actually recognize from the plugin name they selected, not the wrapped implementation
+    /// detail underneath it.
+    fn validate_and_fix(
+        &mut self,
+        core: &CoreParams,
+        others: &[(&str, PluginParams)],
+    ) -> Vec<Warning> {
+        self.hash_grid
+            .validate_and_fix(core, others)
+            .into_iter()
+            .map(|w| Warning {
+                plugin: "adaptive_index",
+                ..w
+            })
+            .collect()
     }
 }
 
@@ -227,6 +256,55 @@ mod tests {
         // through the registry-resolved trait object, not just the concrete type directly.
         idx.candidates_knn(Vec3::ZERO, 3, &mut out);
         assert_eq!(out.len(), 3);
+    }
+
+    fn core_params_with_vision_radius(vision_radius: f64) -> murmur_core::CoreParams {
+        murmur_core::CoreParams::builder()
+            .vision_radius(vision_radius)
+            .boid_count(1)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn resolved_params_reports_the_wrapped_hash_grids_own_cell_size() {
+        let idx = AdaptiveIndex::new(5000, 4.5);
+        assert_eq!(idx.resolved_params().get("cell_size"), Some(4.5));
+    }
+
+    #[test]
+    fn validate_and_fix_snaps_the_wrapped_hash_grids_cell_size_and_reports_adaptive_index() {
+        let mut idx = AdaptiveIndex::new(5000, 3.0);
+        let core = core_params_with_vision_radius(7.0);
+        let warnings = idx.validate_and_fix(&core, &[]);
+        assert_eq!(idx.hash_grid.resolved_params().get("cell_size"), Some(7.0));
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0].plugin, "adaptive_index",
+            "the composed socket name a caller recognizes, not the wrapped hash_grid detail"
+        );
+        assert!(warnings[0].message.contains("cell_size"));
+    }
+
+    #[test]
+    fn validate_and_fix_is_silent_when_cell_size_already_matches_vision_radius() {
+        let mut idx = AdaptiveIndex::new(5000, 7.0);
+        let core = core_params_with_vision_radius(7.0);
+        assert!(idx.validate_and_fix(&core, &[]).is_empty());
+    }
+
+    #[test]
+    fn registered_adaptive_index_is_validated_the_same_way_through_the_registry() {
+        let mut reg = Registry::new();
+        register(&mut reg);
+        let params = PluginParams::new().with("cell_size", 2.0);
+        let mut idx = reg
+            .resolve_spatial_index("adaptive_index", &params)
+            .unwrap();
+        let core = core_params_with_vision_radius(9.0);
+        let warnings = idx.validate_and_fix(&core, &[]);
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].plugin, "adaptive_index");
     }
 
     /// Proves the `SpatialIndex` seam now has ≥3 real occupants (mirroring `kdtree_index`'s own

@@ -366,3 +366,18 @@ round-trip test plus an extended `c_smoke/main.c`, and 3 Python tests.
 (§2 fields, §3 commands) is now fully implemented** — every command has a real handler except
 `DensityScaling`/`ShapePCA`/`TauRho`, which the design doc itself specifies as Python-only for
 v1, not a gap.
+
+**`murmur_adaptive_index`'s wrapped `HashGrid` validation gap (2026-08-08, same day).** A minor,
+already-disclosed follow-up from the `validate()` pass: composing `"adaptive_index"` (which
+wraps a real `HashGrid` internally) instead of `"hash_grid"` directly silently hid that same
+`cell_size`-vs-`vision_radius` check, since `AdaptiveIndex` didn't proxy `resolved_params`/
+`validate_and_fix` through to the `HashGrid` it owns. Fixed by delegating both to
+`self.hash_grid` (`KdTree`, the other backend it wraps, has no tunable params of its own to
+validate) — `validate_and_fix` also remaps the returned `Warning::plugin` from `"hash_grid"` to
+`"adaptive_index"`, the composed socket name a caller of `Simulation::new()` actually recognizes,
+not the wrapped implementation detail underneath it. 4 new unit tests (`resolved_params` reports
+the live `cell_size`; a mismatch gets snapped and reports `plugin: "adaptive_index"`; an
+already-matching `cell_size` stays silent; the same behavior holds through a registry-resolved
+trait object, not just the concrete type directly).
+
+601 Rust tests (up from 597), 115 pytest tests (unchanged — a Rust-only fix), clippy/fmt clean.
