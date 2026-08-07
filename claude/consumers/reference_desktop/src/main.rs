@@ -302,6 +302,9 @@ fn main() -> ExitCode {
             has_obstacle_parent: 0,
             obstacle_parent: 0,
             metric_kind: 0,
+            has_m_range: 0,
+            m_range_min: 0,
+            m_range_max: 0,
         }];
         let mut buffer1: *mut MurmurCheckpointBuffer = ptr::null_mut();
         let status = murmur_run_batch(
@@ -384,6 +387,9 @@ fn main() -> ExitCode {
             has_obstacle_parent: 0,
             obstacle_parent: 0,
             metric_kind: 0,
+            has_m_range: 0,
+            m_range_min: 0,
+            m_range_max: 0,
         }];
         let mut buffer2: *mut MurmurCheckpointBuffer = ptr::null_mut();
         let status = murmur_run_batch(

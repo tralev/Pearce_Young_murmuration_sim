@@ -495,6 +495,12 @@ pub struct CCommand {
     pub obstacle_parent: u32,
     /// `RequestMetric` only — one of the `METRIC_*` constants.
     pub metric_kind: u8,
+    /// `RequestMetric{H2Curve}` only — `Command::RequestMetric`'s own `m_range: Option<(u32,
+    /// u32)>`, the usual `has_x`/`x` encoding (`m_range_min`/`m_range_max` both `0` and
+    /// `has_m_range == 0` means "use the conventional default sweep").
+    pub has_m_range: u8,
+    pub m_range_min: u32,
+    pub m_range_max: u32,
 }
 
 /// # Safety
@@ -549,6 +555,11 @@ unsafe fn decode_commands(ptr: *const CCommand, len: usize) -> Result<Vec<Comman
                     METRIC_SHAPE_PCA => murmur_core::MetricKind::ShapePCA,
                     METRIC_TAU_RHO => murmur_core::MetricKind::TauRho,
                     _ => murmur_core::MetricKind::H2Curve,
+                },
+                m_range: if c.has_m_range != 0 {
+                    Some((c.m_range_min, c.m_range_max))
+                } else {
+                    None
                 },
             },
             other => return Err(format!("command {i}: unknown kind {other}")),
@@ -1337,6 +1348,9 @@ mod tests {
                 has_obstacle_parent: 0,
                 obstacle_parent: 0,
                 metric_kind: 0,
+                has_m_range: 0,
+                m_range_min: 0,
+                m_range_max: 0,
             }];
             let status = murmur_run_batch(
                 sim,
@@ -1416,6 +1430,9 @@ mod tests {
                 has_obstacle_parent: 0,
                 obstacle_parent: 0,
                 metric_kind: 0,
+                has_m_range: 0,
+                m_range_min: 0,
+                m_range_max: 0,
             }];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
             let status = murmur_run_batch(
@@ -1583,6 +1600,9 @@ mod tests {
                     has_obstacle_parent: 0,
                     obstacle_parent: 0,
                     metric_kind: 0,
+                    has_m_range: 0,
+                    m_range_min: 0,
+                    m_range_max: 0,
                 },
                 CCommand {
                     kind: CMD_ADD_PREDATOR,
@@ -1629,6 +1649,9 @@ mod tests {
                     has_obstacle_parent: 0,
                     obstacle_parent: 0,
                     metric_kind: 0,
+                    has_m_range: 0,
+                    m_range_min: 0,
+                    m_range_max: 0,
                 },
             ];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
@@ -1716,6 +1739,9 @@ mod tests {
                 has_obstacle_parent: 0,
                 obstacle_parent: 0,
                 metric_kind: 0,
+                has_m_range: 0,
+                m_range_min: 0,
+                m_range_max: 0,
             }];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
             let status = murmur_run_batch(
@@ -1786,6 +1812,9 @@ mod tests {
             has_obstacle_parent: 0,
             obstacle_parent: 0,
             metric_kind: 0,
+            has_m_range: 0,
+            m_range_min: 0,
+            m_range_max: 0,
         }
     }
 
@@ -1837,6 +1866,9 @@ mod tests {
                 has_obstacle_parent: 0,
                 obstacle_parent: 0,
                 metric_kind: 0,
+                has_m_range: 0,
+                m_range_min: 0,
+                m_range_max: 0,
                 ..zeroed_command(CMD_ADD_OBSTACLE)
             };
             let commands = [remove, add];
@@ -1910,6 +1942,48 @@ mod tests {
         }
     }
 
+    /// A custom `m_range` round-trips through the C encoding too: a single-value range forces
+    /// that exact `m_star`, proving `has_m_range`/`m_range_min`/`m_range_max` genuinely reach
+    /// the native eigensolve, not just `metric_kind`.
+    #[test]
+    fn request_metric_h2_curve_custom_m_range_round_trips_through_the_c_encoding() {
+        unsafe {
+            let strings = default_config_strings();
+            let config = default_config(&strings, 20);
+            let sim = murmur_create(&config);
+            assert!(
+                !sim.is_null(),
+                "{:?}",
+                CStr::from_ptr(murmur_last_error_message())
+            );
+
+            let commands = [CCommand {
+                metric_kind: METRIC_H2_CURVE,
+                has_m_range: 1,
+                m_range_min: 5,
+                m_range_max: 5,
+                ..zeroed_command(CMD_REQUEST_METRIC)
+            }];
+            let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
+            let status = murmur_run_batch(
+                sim,
+                1,
+                1,
+                commands.as_ptr(),
+                commands.len(),
+                &mut out_buffer,
+            );
+            assert_eq!(status, 0);
+
+            let cp0 = murmur_checkpoint_buffer_get(out_buffer, 0);
+            assert_eq!(cp0.has_h2_result, 1);
+            assert_eq!(cp0.h2_result.m_star, 5);
+
+            murmur_checkpoint_buffer_destroy(out_buffer);
+            murmur_destroy(sim);
+        }
+    }
+
     /// The G6 fix itself, through the C API: `MurmurConfig::spawn_headroom` reserved at
     /// `murmur_create` time makes `AddPredator` succeed directly, no `Reset` workaround needed.
     #[test]
@@ -1975,6 +2049,9 @@ mod tests {
                 has_obstacle_parent: 0,
                 obstacle_parent: 0,
                 metric_kind: 0,
+                has_m_range: 0,
+                m_range_min: 0,
+                m_range_max: 0,
             }];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
             let status = murmur_run_batch(

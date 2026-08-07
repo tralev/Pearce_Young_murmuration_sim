@@ -305,10 +305,12 @@ impl PyCommand {
     /// Requests a metric (design/05 §3). `kind`: `"h2_curve"` (default — the one native Rust
     /// path, `murmur_core::h2`; populates `Snapshot.consensus_degree`/`scene["h2_result"]`) or
     /// `"density_scaling"`/`"shape_pca"`/`"tau_rho"` (Python-only for v1, always a documented
-    /// no-op, not a silent failure).
+    /// no-op, not a silent failure). `m_range`: `"h2_curve"` only — a custom, inclusive `m*`
+    /// sweep `(min, max)` overriding the conventional default (`2..=12`); `None` (the default)
+    /// uses that default. Ignored by every other `kind`.
     #[staticmethod]
-    #[pyo3(signature = (kind = "h2_curve"))]
-    fn request_metric(kind: &str) -> Self {
+    #[pyo3(signature = (kind = "h2_curve", m_range = None))]
+    fn request_metric(kind: &str, m_range: Option<(u32, u32)>) -> Self {
         let kind = match kind {
             "density_scaling" => MetricKind::DensityScaling,
             "shape_pca" => MetricKind::ShapePCA,
@@ -316,7 +318,7 @@ impl PyCommand {
             _ => MetricKind::H2Curve,
         };
         PyCommand {
-            inner: Command::RequestMetric { kind },
+            inner: Command::RequestMetric { kind, m_range },
         }
     }
 }

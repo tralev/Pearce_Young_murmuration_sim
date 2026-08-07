@@ -468,6 +468,7 @@ fn request_metric_h2curve_populates_h2_result_and_consensus_degree_on_a_real_sim
             1,
             vec![Command::RequestMetric {
                 kind: MetricKind::H2Curve,
+                m_range: None,
             }],
         )
         .unwrap();
@@ -486,6 +487,60 @@ fn request_metric_h2curve_populates_h2_result_and_consensus_degree_on_a_real_sim
     );
 }
 
+/// A single-value custom `m_range` forces that exact `m` — the cleanest way to prove the
+/// override actually narrows the candidate sweep, since the true default `2..=12` argmax
+/// isn't otherwise predictable without recomputing it by hand.
+#[test]
+fn request_metric_h2curve_respects_a_custom_m_range() {
+    let mut sim = built_sim(20, false);
+    let buffer = sim
+        .run_batch_checked(
+            1,
+            1,
+            vec![Command::RequestMetric {
+                kind: MetricKind::H2Curve,
+                m_range: Some((5, 5)),
+            }],
+        )
+        .unwrap();
+    let h2 = buffer.checkpoints[0].scene_fields.h2_result.unwrap();
+    assert_eq!(
+        h2.m_star, 5,
+        "a single-value custom range must force that exact m"
+    );
+}
+
+/// An inverted range (`min > max`) is genuinely malformed — rejected before anything applies,
+/// not silently swapped or clamped.
+#[test]
+fn request_metric_h2curve_with_an_inverted_m_range_is_rejected() {
+    let mut sim = built_sim(20, false);
+    let result = sim.run_batch_checked(
+        1,
+        1,
+        vec![Command::RequestMetric {
+            kind: MetricKind::H2Curve,
+            m_range: Some((10, 2)),
+        }],
+    );
+    assert!(result.is_err());
+}
+
+/// `m = 0` is meaningless (a 0-nearest-neighbour graph has no edges) — rejected the same way.
+#[test]
+fn request_metric_h2curve_with_a_zero_m_range_min_is_rejected() {
+    let mut sim = built_sim(20, false);
+    let result = sim.run_batch_checked(
+        1,
+        1,
+        vec![Command::RequestMetric {
+            kind: MetricKind::H2Curve,
+            m_range: Some((0, 5)),
+        }],
+    );
+    assert!(result.is_err());
+}
+
 /// Too few boids for any candidate `m` in the sweep: `h2::m_star` returns `None`, so no cache
 /// is populated — `h2_result`/`consensus_degree` stay `None`, not a default/zero value.
 #[test]
@@ -497,6 +552,7 @@ fn request_metric_h2curve_with_too_few_boids_leaves_h2_result_none() {
             1,
             vec![Command::RequestMetric {
                 kind: MetricKind::H2Curve,
+                m_range: None,
             }],
         )
         .unwrap();
@@ -518,6 +574,7 @@ fn h2_result_persists_across_checkpoints_until_a_new_request_metric_or_reset() {
         1,
         vec![Command::RequestMetric {
             kind: MetricKind::H2Curve,
+            m_range: None,
         }],
     )
     .unwrap();
@@ -538,6 +595,7 @@ fn reset_command_clears_a_previously_cached_h2_result() {
         1,
         vec![Command::RequestMetric {
             kind: MetricKind::H2Curve,
+            m_range: None,
         }],
     )
     .unwrap();
@@ -565,6 +623,7 @@ fn request_metric_density_scaling_is_a_documented_noop() {
             1,
             vec![Command::RequestMetric {
                 kind: MetricKind::DensityScaling,
+                m_range: None,
             }],
         )
         .unwrap();

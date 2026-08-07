@@ -381,3 +381,22 @@ already-matching `cell_size` stays silent; the same behavior holds through a reg
 trait object, not just the concrete type directly).
 
 601 Rust tests (up from 597), 115 pytest tests (unchanged — a Rust-only fix), clippy/fmt clean.
+
+**A caller-configurable `m*` sweep for `RequestMetric{H2Curve}` (2026-08-08, same day).** Closes
+the one item left open when the native H₂ path was built: `Command::RequestMetric` gained
+`m_range: Option<(u32, u32)>` — `H2Curve` only, ignored by every other `kind` — overriding the
+conventional default sweep (`2..=12`) when `Some`. Validated before anything applies (design's
+own "genuinely malformed" class, not silently clamped): `min >= 1` and `min <= max`, or the
+whole batch is rejected. Surfaced through both consumer surfaces: `murmur_ffi`'s `CCommand`
+gained `has_m_range`/`m_range_min`/`m_range_max` (header regenerated, `reference_desktop`'s own
+literals and several `murmur_ffi` test literals updated); `murmur_py`'s `Command.request_metric`
+gained an `m_range: Optional[Tuple[int, int]]` keyword. Verified end-to-end at three layers
+using the same technique throughout: a single-value range (e.g. `(5, 5)`) forces one exact `m*`,
+the cleanest way to prove the override is actually respected (the true default argmax isn't
+otherwise predictable without recomputing it by hand) — plus a rejected-inverted-range case and
+a rejected-zero-min case. 3 new `murmur_core` integration tests, 1 new `murmur_ffi` C-encoding
+round-trip test (plus `c_smoke/main.c`'s own existing `H2Curve` check switched to a custom
+`m_range=[6,6]`, now asserting an exact `m_star` instead of just `>= 2`), 2 new Python tests.
+
+605 Rust tests (up from 601), 117 pytest tests (up from 115), clippy/fmt clean including
+`murmur_py`, C smoke test passing.

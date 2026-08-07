@@ -66,7 +66,9 @@ class Command:
     @staticmethod
     def remove_obstacle(id: int) -> "Command": ...
     @staticmethod
-    def request_metric(kind: str = "h2_curve") -> "Command": ...
+    def request_metric(
+        kind: str = "h2_curve", m_range: Optional[Tuple[int, int]] = None
+    ) -> "Command": ...
 
 class Simulation:
     """A constructed, running simulation. Plugin composition is fixed at construction and

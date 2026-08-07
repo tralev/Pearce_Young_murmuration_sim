@@ -308,6 +308,14 @@ typedef struct CCommand {
    * `RequestMetric` only — one of the `METRIC_*` constants.
    */
   uint8_t metric_kind;
+  /**
+   * `RequestMetric{H2Curve}` only — `Command::RequestMetric`'s own `m_range: Option<(u32,
+   * u32)>`, the usual `has_x`/`x` encoding (`m_range_min`/`m_range_max` both `0` and
+   * `has_m_range == 0` means "use the conventional default sweep").
+   */
+  uint8_t has_m_range;
+  uint32_t m_range_min;
+  uint32_t m_range_max;
 } CCommand;
 
 /**

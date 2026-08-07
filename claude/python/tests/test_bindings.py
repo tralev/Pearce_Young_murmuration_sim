@@ -313,6 +313,22 @@ def test_request_metric_density_scaling_is_a_documented_noop():
     assert np.all(np.isnan(snap.consensus_degree))
 
 
+def test_request_metric_h2_curve_respects_a_custom_m_range():
+    # A single-value custom m_range forces that exact m_star -- the cleanest way to prove the
+    # override reaches the native eigensolve from Python, since the true default 2..=12 argmax
+    # isn't otherwise predictable without recomputing it by hand.
+    sim = make_sim(20)
+    sim.run_batch_checked(1, 1, [m.Command.request_metric("h2_curve", m_range=(5, 5))])
+    h2 = sim.snapshot().scene["h2_result"]
+    assert h2["m_star"] == 5
+
+
+def test_request_metric_h2_curve_with_an_inverted_m_range_raises_value_error():
+    sim = make_sim(20)
+    with pytest.raises(ValueError):
+        sim.run_batch_checked(1, 1, [m.Command.request_metric("h2_curve", m_range=(10, 2))])
+
+
 def test_warnings_is_empty_when_cell_size_already_matches_vision_radius():
     sim = make_sim(10)
     assert sim.warnings() == []

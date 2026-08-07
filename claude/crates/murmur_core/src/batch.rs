@@ -34,10 +34,8 @@ use crate::step_hook::{
     BoidCheckpointFields, CsgOp, H2ResultSnapshot, ObstaclePrimitiveSnapshot, SceneCheckpointFields,
 };
 
-/// Young 2013's own conventional `m*` sweep (`sci/todo.md`, `h2.rs::m_star`'s own doc) — no
-/// `Command::RequestMetric` param for this yet (design/05 §3 names none), matching every other
-/// "no nested structures" flat-command precedent here; a caller wanting a different sweep is a
-/// real, but not yet requested, follow-up.
+/// Young 2013's own conventional `m*` sweep (`sci/todo.md`, `h2.rs::m_star`'s own doc) — the
+/// default when `Command::RequestMetric`'s own `m_range` is `None`.
 const H2_M_SWEEP: std::ops::RangeInclusive<usize> = 2..=12;
 
 /// `Command::RequestMetric{H2Curve}`'s result, cached on `Simulation` (`pipeline.rs`) rather
@@ -205,9 +203,12 @@ pub enum Command {
     },
     /// `H2Curve` computes a real `H2Cache` (native Rust path, `murmur_core::h2`, module doc) —
     /// `DensityScaling`/`ShapePCA`/`TauRho` are Python-only for v1 per design/05 §3, always a
-    /// documented no-op, not a silent failure.
+    /// documented no-op, not a silent failure. `m_range`: `H2Curve` only — a custom, inclusive
+    /// `m*` sweep `(min, max)` overriding the conventional default (`H2_M_SWEEP`, module doc);
+    /// `None` uses that default. Ignored by every other `kind`.
     RequestMetric {
         kind: MetricKind,
+        m_range: Option<(u32, u32)>,
     },
 }
 
@@ -377,9 +378,21 @@ impl Simulation {
                     .step_hooks
                     .iter()
                     .find_map(|h| h.validate_command(command)),
+                Command::RequestMetric {
+                    m_range: Some((lo, hi)),
+                    ..
+                } => {
+                    if *lo < 1 || lo > hi {
+                        Some(format!(
+                            "m_range ({lo}, {hi}) must have min >= 1 and min <= max"
+                        ))
+                    } else {
+                        None
+                    }
+                }
                 Command::RemovePredator { .. }
                 | Command::Reset { .. }
-                | Command::RequestMetric { .. } => None,
+                | Command::RequestMetric { m_range: None, .. } => None,
             };
             if let Some(reason) = reason {
                 errors.push(CommandError { index, reason });
@@ -441,13 +454,18 @@ impl Simulation {
                 }
                 Command::RequestMetric {
                     kind: MetricKind::H2Curve,
+                    m_range,
                 } => {
                     let indices: Vec<u32> = self.boids.iter_active().collect();
                     let positions: Vec<Vec3> = indices
                         .iter()
                         .map(|&i| self.boids.pos[i as usize])
                         .collect();
-                    if let Some(m) = h2::m_star(&positions, H2_M_SWEEP) {
+                    let sweep = match m_range {
+                        Some((lo, hi)) => (lo as usize)..=(hi as usize),
+                        None => H2_M_SWEEP,
+                    };
+                    if let Some(m) = h2::m_star(&positions, sweep) {
                         let result = h2::h2_at_m(&positions, m);
                         let degrees = h2::consensus_degrees(&positions, m);
                         self.h2_cache = Some(H2Cache {

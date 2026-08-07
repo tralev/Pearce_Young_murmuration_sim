@@ -93,9 +93,14 @@ int main(void) {
     commands[3].obstacle_primitive.half_extent.z = 4.0;
     commands[3].obstacle_csg_op = 0; /* Union */
     /* CMD_REQUEST_METRIC{H2Curve}'s write direction: a real native H2 eigensolve reaches a
-     * real composed Simulation from real C. */
+     * real composed Simulation from real C. A custom, single-value m_range forces an exact
+     * m_star, proving has_m_range/m_range_min/m_range_max reach the eigensolve too, not just
+     * metric_kind. */
     commands[4].kind = CMD_REQUEST_METRIC;
     commands[4].metric_kind = METRIC_H2_CURVE;
+    commands[4].has_m_range = 1;
+    commands[4].m_range_min = 6;
+    commands[4].m_range_max = 6;
 
     struct MurmurCheckpointBuffer *buffer = NULL;
     int32_t status = murmur_run_batch(sim, 15, 1, commands, 5, &buffer);
@@ -146,9 +151,9 @@ int main(void) {
                 cp.obstacle_count ? cp.obstacles[0].primitive.kind : 0);
         return 1;
     }
-    if (!cp.has_h2_result || cp.h2_result.m_star < 2) {
-        fprintf(stderr, "CMD_REQUEST_METRIC{H2Curve} didn't reach the native eigensolve: "
-                        "has_h2_result=%u m_star=%u\n",
+    if (!cp.has_h2_result || cp.h2_result.m_star != 6) {
+        fprintf(stderr, "CMD_REQUEST_METRIC{H2Curve} (custom m_range=[6,6]) didn't reach the "
+                        "native eigensolve: has_h2_result=%u m_star=%u\n",
                 cp.has_h2_result, cp.h2_result.m_star);
         return 1;
     }
