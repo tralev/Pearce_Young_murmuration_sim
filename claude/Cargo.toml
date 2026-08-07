@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/murmur_core",
     "crates/murmur_conformance",
+    "crates/murmur_benchmarks",
     "crates/murmur_ffi",
     "crates/murmur_py",
     "crates/plugins/*",

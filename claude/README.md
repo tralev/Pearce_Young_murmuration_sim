@@ -400,3 +400,27 @@ round-trip test (plus `c_smoke/main.c`'s own existing `H2Curve` check switched t
 
 605 Rust tests (up from 601), 117 pytest tests (up from 115), clippy/fmt clean including
 `murmur_py`, C smoke test passing.
+
+**A `criterion` benchmark suite, `murmur_benchmarks` (2026-08-08, same day) — Tier 4's first
+item.** `murmur_core` itself can't take any `murmur_*` dependency, plugin or otherwise
+(`guard_core_has_no_plugin_deps`, enforced across `dependencies`/`dev-dependencies`/
+`build-dependencies` alike), so a benchmark exercising the real default composition needs its
+own crate — a new, dedicated `crates/murmur_benchmarks` (added to the workspace `members` list),
+not bolted onto any one plugin, so `cargo bench` has one discoverable home. Three suites, each
+directly motivated by a named Tier 4 concern rather than benchmarking everything speculatively:
+
+- `step.rs` — `Simulation::step()` throughput at N=100/1,000/5,000, composing the exact same
+  default slice (`murmur_pearce` + `instant_response` + `open_domain` + `hash_grid` +
+  `radius_gather` + `initializers`) `murmur_pearce/tests/slice_integration.rs` already proves
+  scientifically correct — this bench only asks "how fast," correctness stays that test's job.
+- `spatial_index.rs` — `HashGrid` rebuild/query cost at N=1,000/10,000/50,000, a real baseline
+  for the "incremental `HashGrid` rebuild" concern the 300k-boid milestone item names, measured
+  against the current always-full-rebuild implementation before any incremental version exists.
+- `h2.rs` — `h2_at_m`/`m_star` cost at N=100/200/400 (kept modest — the eigensolve is `O(N³)`),
+  a real baseline the sparse partial eigensolver item would need to beat.
+
+Verified by running all three suites in Criterion's own `--test` mode (one quick iteration each,
+no full statistical sampling) — confirms every benchmark function actually executes without
+panicking, the standard way to smoke-test a bench suite without paying its full runtime.
+`cargo bench -p murmur_benchmarks` (or `--bench step`/`spatial_index`/`h2` individually) runs
+the real thing.

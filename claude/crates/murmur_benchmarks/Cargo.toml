@@ -1,0 +1,29 @@
+[package]
+name = "murmur_benchmarks"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish = false
+description = "Criterion benchmark suite (roadmap.md Tier 4) — a dedicated crate, not bolted onto any one plugin, so `cargo bench` has one discoverable home. Composes the real default slice (murmur_pearce + instant_response + open_domain + hash_grid + radius_gather + initializers), the same composition murmur_pearce's own slice_integration.rs proves correct — benchmarks measure the real pipeline, not a synthetic stand-in."
+
+[dev-dependencies]
+criterion = "0.5"
+murmur_core = { path = "../murmur_core" }
+murmur_hash_grid = { path = "../plugins/murmur_hash_grid" }
+murmur_initializers = { path = "../plugins/murmur_initializers" }
+murmur_instant_response = { path = "../plugins/murmur_instant_response" }
+murmur_open_domain = { path = "../plugins/murmur_open_domain" }
+murmur_pearce = { path = "../plugins/murmur_pearce" }
+murmur_radius_gather = { path = "../plugins/murmur_radius_gather" }
+
+[[bench]]
+name = "step"
+harness = false
+
+[[bench]]
+name = "spatial_index"
+harness = false
+
+[[bench]]
+name = "h2"
+harness = false
