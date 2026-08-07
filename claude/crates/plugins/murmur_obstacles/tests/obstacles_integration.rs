@@ -3,7 +3,10 @@
 //! `roadmap.md`'s own Phase 18 row already promises: a real flock demonstrably avoids a placed
 //! SDF primitive.
 
-use murmur_core::{CoreParams, PluginParams, Registry, SimConfig, Simulation};
+use murmur_core::{
+    Command, CoreParams, CsgOp, ObstaclePrimitiveSnapshot, PluginParams, Registry, SimConfig,
+    Simulation, Vec3,
+};
 
 fn build_registry() -> Registry {
     let mut reg = Registry::new();
@@ -154,6 +157,82 @@ fn a_flock_spawned_clear_of_the_obstacle_stays_clear() {
         positions.iter().all(|p| (*p - obstacle_center).len() > 6.0),
         "no boid should ever end up inside a distant obstacle it never approached"
     );
+}
+
+/// design/05_viz_contract.md §3's `AddObstacle`/`RemoveObstacle` write direction, exercised
+/// end-to-end through the real `Command` queue (`run_batch_checked`), not just
+/// `murmur_obstacles`'s own unit-level `apply_command` tests — proves `batch.rs`'s generic
+/// StepHook dispatch genuinely reaches a real composed `obstacles` plugin, and that the
+/// resulting scene reaches a real `Checkpoint`. The construction-time composition always
+/// places one default sphere (id 0, from `register()`'s own `PluginParams` defaults); this
+/// removes it and adds a different one, then checks the checkpoint reflects exactly that.
+#[test]
+fn add_and_remove_obstacle_commands_reach_a_real_composed_obstacles_plugin() {
+    let mut sim = build_sim(10, 1);
+    let buffer = sim
+        .run_batch_checked(
+            1,
+            1,
+            vec![
+                Command::RemoveObstacle { id: 0 },
+                Command::AddObstacle {
+                    primitive: ObstaclePrimitiveSnapshot::Box {
+                        center: Vec3::new(1.0, 2.0, 3.0),
+                        half_extent: Vec3::new(4.0, 4.0, 4.0),
+                    },
+                    csg_op: CsgOp::Union,
+                    parent: None,
+                },
+            ],
+        )
+        .unwrap();
+    let obstacles = &buffer.checkpoints[0].scene_fields.obstacles;
+    assert_eq!(
+        obstacles.len(),
+        1,
+        "the id=0 sphere should be gone, the new box should be there"
+    );
+    assert!(matches!(
+        obstacles[0].primitive,
+        ObstaclePrimitiveSnapshot::Box { .. }
+    ));
+    assert_eq!(
+        obstacles[0].id, 1,
+        "the new obstacle gets the next id after the construction-time one (0)"
+    );
+}
+
+/// A structurally invalid command (two cuts on the same solid) is rejected before anything
+/// applies — not silently ignored or half-applied.
+#[test]
+fn a_second_cut_on_the_same_obstacle_is_rejected_not_silently_applied() {
+    let mut sim = build_sim(10, 1);
+    let sphere = ObstaclePrimitiveSnapshot::Sphere {
+        center: Vec3::ZERO,
+        radius: 1.0,
+    };
+    // The first cut succeeds...
+    sim.run_batch_checked(
+        1,
+        1,
+        vec![Command::AddObstacle {
+            primitive: sphere,
+            csg_op: CsgOp::Subtract,
+            parent: Some(0),
+        }],
+    )
+    .unwrap();
+    // ...a second one onto the same parent must be rejected.
+    let result = sim.run_batch_checked(
+        1,
+        1,
+        vec![Command::AddObstacle {
+            primitive: sphere,
+            csg_op: CsgOp::Subtract,
+            parent: Some(0),
+        }],
+    );
+    assert!(result.is_err());
 }
 
 #[test]

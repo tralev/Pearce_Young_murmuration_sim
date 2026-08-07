@@ -128,10 +128,20 @@ pub enum CsgOp {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ObstacleNodeSnapshot {
+    /// This node's own address, assigned by the producing plugin — a base node and its own
+    /// `cut` node (if any) share the same `id`, since `Command::RemoveObstacle`/`AddObstacle`
+    /// (batch.rs §3) address a whole *solid* (base + cut together), not each CSG primitive
+    /// individually. Durability depends on the producing plugin: `murmur_obstacles`'s own
+    /// `Obstacle` assigns these once and keeps them stable across checkpoints specifically so a
+    /// real caller can round-trip an id through `RemoveObstacle`/`AddObstacle{parent}` later —
+    /// a scene built directly through `ObstacleScene::checkpoint_nodes()` (no `Obstacle`
+    /// wrapper) has no such tracking and reports positional ids instead, fine for inspection
+    /// but not meant to be round-tripped through a command.
+    pub id: u32,
     pub primitive: ObstaclePrimitiveSnapshot,
     pub csg_op: CsgOp,
-    /// Index into the same `Vec<ObstacleNodeSnapshot>` — `None` for a root-level (unioned)
-    /// solid, `Some(i)` for a `cut` primitive subtracted from node `i`.
+    /// Another node's own `id` in this same list — `None` for a root-level (unioned) solid,
+    /// `Some(id)` for a `cut` primitive subtracted from the solid whose own `id` this is.
     pub parent: Option<u32>,
 }
 

@@ -39,12 +39,12 @@ int main(void) {
     config.init_seed = 7;
     config.spawn_headroom = 0;
 
-    /* Composes two StepHooks whose own checkpoint fields this smoke test verifies below --
+    /* Composes three StepHooks whose own checkpoint fields this smoke test verifies below --
      * proving the new per-boid/scene-level CCheckpoint fields (design/05_viz_contract.md §2.1/
      * §2.2) are genuinely reachable from real C, not just from murmur_ffi's own Rust tests. */
-    const char *hooks[2] = {"boid_state_machine", "ecology"};
+    const char *hooks[3] = {"boid_state_machine", "ecology", "obstacles"};
     config.step_hooks = hooks;
-    config.step_hooks_len = 2;
+    config.step_hooks_len = 3;
 
     struct MurmurSimulation *sim = murmur_create(&config);
     if (sim == NULL) {
@@ -69,7 +69,7 @@ int main(void) {
         return 1;
     }
 
-    struct CCommand commands[2];
+    struct CCommand commands[4];
     memset(commands, 0, sizeof(commands));
     commands[0].kind = CMD_SET_CHECKPOINT_STRIDE;
     commands[0].stride = 5;
@@ -78,9 +78,23 @@ int main(void) {
     commands[1].kind = CMD_SET_ENVIRONMENT;
     commands[1].env_day = 100;
     commands[1].env_hour = 10.0;
+    /* CMD_ADD_OBSTACLE/CMD_REMOVE_OBSTACLE's write direction: removes the construction-time
+     * default sphere (id 0) and adds a box instead, proving both reach a real composed
+     * obstacles plugin from real C. */
+    commands[2].kind = CMD_REMOVE_OBSTACLE;
+    commands[2].id = 0;
+    commands[3].kind = CMD_ADD_OBSTACLE;
+    commands[3].obstacle_primitive.kind = 1; /* Box */
+    commands[3].obstacle_primitive.center.x = 1.0;
+    commands[3].obstacle_primitive.center.y = 2.0;
+    commands[3].obstacle_primitive.center.z = 3.0;
+    commands[3].obstacle_primitive.half_extent.x = 4.0;
+    commands[3].obstacle_primitive.half_extent.y = 4.0;
+    commands[3].obstacle_primitive.half_extent.z = 4.0;
+    commands[3].obstacle_csg_op = 0; /* Union */
 
     struct MurmurCheckpointBuffer *buffer = NULL;
-    int32_t status = murmur_run_batch(sim, 15, 1, commands, 2, &buffer);
+    int32_t status = murmur_run_batch(sim, 15, 1, commands, 4, &buffer);
     if (status != 0) {
         fprintf(stderr, "murmur_run_batch failed with status %d\n", status);
         return 1;
@@ -119,6 +133,13 @@ int main(void) {
     if (cp.environment.day != 100 || cp.environment.hour < 17.0 || cp.environment.hour > 18.0) {
         fprintf(stderr, "CMD_SET_ENVIRONMENT didn't reach ecology: day=%llu hour=%f\n",
                 (unsigned long long)cp.environment.day, cp.environment.hour);
+        return 1;
+    }
+    if (cp.obstacle_count != 1 || cp.obstacles[0].id != 1 || cp.obstacles[0].primitive.kind != 1) {
+        fprintf(stderr, "CMD_ADD_OBSTACLE/CMD_REMOVE_OBSTACLE didn't reach obstacles: "
+                        "count=%u id=%u kind=%u\n",
+                cp.obstacle_count, cp.obstacle_count ? cp.obstacles[0].id : 0,
+                cp.obstacle_count ? cp.obstacles[0].primitive.kind : 0);
         return 1;
     }
 

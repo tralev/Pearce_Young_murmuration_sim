@@ -206,12 +206,14 @@ typedef struct CObstaclePrimitive {
 } CObstaclePrimitive;
 
 /**
- * design/05_viz_contract.md §2.2's own flat, parent-indexed obstacle-scene node list —
+ * design/05_viz_contract.md §2.2's own flat obstacle-scene node list —
  * `murmur_core::ObstacleNodeSnapshot`'s own shape. `csg_op`: `0` = Union, `1` = Subtract.
  * `has_parent`/`parent` encode `Option<u32>` the same `has_x`/`x` way every other optional
- * field in this crate does.
+ * field in this crate does. `id` is this node's own address (`ObstacleNodeSnapshot::id`'s own
+ * doc) — round-trippable through a later `Command::AddObstacle`/`RemoveObstacle`.
  */
 typedef struct CObstacleNode {
+  uint32_t id;
   struct CObstaclePrimitive primitive;
   uint8_t csg_op;
   uint8_t has_parent;
@@ -272,6 +274,16 @@ typedef struct CCommand {
    */
   uint64_t env_day;
   double env_hour;
+  /**
+   * `AddObstacle` only — `Command::AddObstacle`'s own `primitive`/`csg_op`/`parent`.
+   * `obstacle_csg_op`: `0` = Union, `1` = Subtract. `has_obstacle_parent`/`obstacle_parent`
+   * encode `parent: Option<u32>` the same `has_x`/`x` way every other optional field here
+   * does. `RemoveObstacle` reuses `id` above, not a field of its own.
+   */
+  struct CObstaclePrimitive obstacle_primitive;
+  uint8_t obstacle_csg_op;
+  uint8_t has_obstacle_parent;
+  uint32_t obstacle_parent;
 } CCommand;
 
 /**

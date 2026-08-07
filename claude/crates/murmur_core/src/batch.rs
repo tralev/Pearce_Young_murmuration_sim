@@ -12,22 +12,23 @@
 //! `obstacles`, `wander`, `ripple`, `dynamic_vision_range`) are now wired too, generically via
 //! `StepHook::checkpoint_boid_fields`/`checkpoint_scene_fields` (step_hook.rs) — `murmur_core`
 //! never references a specific plugin by name to do this; each hook opts in on its own.
-//! `SetEnvironment`'s write direction is now wired too, generically via
-//! `StepHook::validate_command`/`apply_command` (`ecology`'s own implementation is the one real
-//! handler — see `Command`'s own doc for why it needed a persistent time-offset, not a direct
-//! field overwrite). `AddObstacle`/`RequestMetric` (native H₂/`DensityScaling`/`ShapePCA`/
-//! `TauRho`) and `consensus_degree`/`h2_result` remain documented no-ops/omitted fields —
-//! `AddObstacle`/`RemoveObstacle` need a stable obstacle-id scheme in the checkpoint schema
-//! first (see `Command`'s own doc), and no native H₂-on-checkpoint path exists yet either. Both
-//! are real, disclosed, separately-scoped follow-ups, not this pass's job — same "fix lazily"
-//! practice as roadmap.md's G1–G8.
+//! `SetEnvironment`/`AddObstacle`/`RemoveObstacle`'s write directions are now wired too,
+//! generically via `StepHook::validate_command`/`apply_command` (`ecology`'s and
+//! `murmur_obstacles`'s own implementations are the two real handlers — see `Command`'s own doc
+//! for why each needed real design work, not a direct field overwrite). `RequestMetric` (native
+//! H₂/`DensityScaling`/`ShapePCA`/`TauRho`) and `consensus_degree`/`h2_result` remain documented
+//! no-ops/omitted fields — no native H₂-on-checkpoint path exists yet, a real, disclosed,
+//! separately-scoped follow-up, not this pass's job — same "fix lazily" practice as
+//! roadmap.md's G1–G8.
 
 use crate::boids::Species;
 use crate::math::Vec3;
 use crate::metrics::Metrics;
 use crate::params::CoreParams;
 use crate::pipeline::Simulation;
-use crate::step_hook::{BoidCheckpointFields, SceneCheckpointFields};
+use crate::step_hook::{
+    BoidCheckpointFields, CsgOp, ObstaclePrimitiveSnapshot, SceneCheckpointFields,
+};
 
 /// Delivered once per `Simulation`, before the first checkpoint (design/05 §2.0). Everything
 /// here is constant for the simulation's lifetime (composition is fixed at construction, D14).
@@ -97,19 +98,24 @@ pub struct CheckpointBuffer {
 
 /// design/05_viz_contract.md §3. Every variant maps to a documented behaviour even when its
 /// target plugin isn't part of the current composition — the design's own "no-op, not error"
-/// rule. `SetEnvironment`'s write direction is wired (routed generically through
-/// `StepHook::validate_command`/`apply_command`, `ecology`'s own implementation) — `ecology`'s
-/// own `EnvironmentState` is otherwise purely *derived* each step from `step_count * dt`, so
-/// `SetEnvironment` works by setting a persistent time offset, not overwriting a field that
-/// `pre_step` would just immediately recompute away.
+/// rule. `SetEnvironment`/`AddObstacle`/`RemoveObstacle`'s write directions are all wired
+/// (routed generically through `StepHook::validate_command`/`apply_command`, `ecology`'s and
+/// `murmur_obstacles`'s own implementations are the two real handlers).
 ///
-/// `AddObstacle`/`RemoveObstacle` remain a no-op — a real, newly-disclosed gap, not the
-/// original "plugin doesn't exist" reason: design/05 §2.2's own `ObstacleNode` checkpoint shape
-/// (`{primitive, csg_op, parent}`) never assigns a *stable* id to a placed obstacle (`parent`
-/// is a positional index into that one checkpoint's own flat list, not a durable handle), so no
-/// real caller can ever construct a valid `RemoveObstacle{id}` or a `parent`-referencing
-/// `AddObstacle` today — the schema itself would need a stable id field before this write
-/// direction is meaningfully drivable, a separately-scoped follow-up.
+/// `SetEnvironment`: `ecology`'s own `EnvironmentState` is otherwise purely *derived* each step
+/// from `step_count * dt`, so this works by setting a persistent time offset, not overwriting a
+/// field that `pre_step` would just immediately recompute away.
+///
+/// `AddObstacle`/`RemoveObstacle` needed a real, previously-undisclosed prerequisite first:
+/// design/05 §2.2's own `ObstacleNode` checkpoint shape didn't originally assign a *stable* id
+/// to a placed obstacle (`parent` was a positional index into that one checkpoint's own flat
+/// list, not a durable handle) — `ObstacleNodeSnapshot::id` (step_hook.rs) closes that, and
+/// `murmur_obstacles::Obstacle` is the one plugin that actually tracks it stably across
+/// checkpoints (a plain `ObstacleScene` built without the `Obstacle` wrapper still only reports
+/// positional ids — see both types' own docs). This plugin's own 2-level CSG limit (one `cut`
+/// per `Solid`, `murmur_obstacles`'s own module doc) means an `AddObstacle` with
+/// `csg_op: Subtract` can only attach to a `parent` that doesn't already have a cut — rejected
+/// as malformed otherwise, not silently overwritten.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     AddPredator {
@@ -119,11 +125,20 @@ pub enum Command {
     RemovePredator {
         id: u32,
     },
-    /// No live command-routing path into a composed `obstacles` plugin's scene yet — always a
-    /// no-op (see the enum's own doc: no stable obstacle id exists to route through).
-    AddObstacle,
-    /// No live command-routing path into a composed `obstacles` plugin's scene yet — always a
-    /// no-op (see the enum's own doc: no stable obstacle id exists to route through).
+    /// Routed generically to every composed `StepHook`'s own `validate_command`/`apply_command`
+    /// — `murmur_obstacles::Obstacle` is the one real handler (see the enum's own doc). A no-op
+    /// if `obstacles` isn't composed (design/05 §3's own "target not composed" rule).
+    /// `csg_op: Union` adds a new root solid (`parent` must be `None`); `csg_op: Subtract`
+    /// attaches `primitive` as an existing solid's `cut` (`parent` must be `Some(id)` of a
+    /// solid that doesn't already have one).
+    AddObstacle {
+        primitive: ObstaclePrimitiveSnapshot,
+        csg_op: CsgOp,
+        parent: Option<u32>,
+    },
+    /// Removes a whole solid (its base and, if any, its own cut together) by the `id`
+    /// `ObstacleNodeSnapshot::id` reports. A no-op if `obstacles` isn't composed; rejected as
+    /// malformed if it is composed but no solid has this `id`.
     RemoveObstacle {
         id: u32,
     },
@@ -169,6 +184,31 @@ const LIVE_CORE_PARAM_NAMES: &[&str] = &[
     "dt",
     "vision_radius",
 ];
+
+/// `Command::AddObstacle`'s own basic malformed-value check — every `Vec3`/`f64` field finite,
+/// mirroring `AddPredator`'s own `position`/`velocity` finiteness check. Whether `csg_op`/
+/// `parent` form a *valid combination*, and whether `parent` actually names a live solid, is
+/// necessarily plugin-specific (only `murmur_obstacles::Obstacle` knows its own solids), so
+/// that part is left to `StepHook::validate_command`.
+fn primitive_is_finite(p: &ObstaclePrimitiveSnapshot) -> bool {
+    match p {
+        ObstaclePrimitiveSnapshot::Sphere { center, radius } => {
+            center.is_finite() && radius.is_finite()
+        }
+        ObstaclePrimitiveSnapshot::Box {
+            center,
+            half_extent,
+        } => center.is_finite() && half_extent.is_finite(),
+        ObstaclePrimitiveSnapshot::Cylinder {
+            center,
+            axis,
+            radius,
+            half_height,
+        } => {
+            center.is_finite() && axis.is_finite() && radius.is_finite() && half_height.is_finite()
+        }
+    }
+}
 
 fn validate_core_param(name: &str, value: f64) -> Result<(), String> {
     if !LIVE_CORE_PARAM_NAMES.contains(&name) {
@@ -278,11 +318,22 @@ impl Simulation {
                             .find_map(|h| h.validate_command(command))
                     }
                 }
-                Command::RemovePredator { .. }
-                | Command::AddObstacle
-                | Command::RemoveObstacle { .. }
-                | Command::Reset { .. }
-                | Command::RequestMetric => None,
+                Command::AddObstacle { primitive, .. } => {
+                    if !primitive_is_finite(primitive) {
+                        Some("primitive fields must be finite".to_string())
+                    } else {
+                        self.step_hooks
+                            .iter()
+                            .find_map(|h| h.validate_command(command))
+                    }
+                }
+                Command::RemoveObstacle { .. } => self
+                    .step_hooks
+                    .iter()
+                    .find_map(|h| h.validate_command(command)),
+                Command::RemovePredator { .. } | Command::Reset { .. } | Command::RequestMetric => {
+                    None
+                }
             };
             if let Some(reason) = reason {
                 errors.push(CommandError { index, reason });
@@ -318,19 +369,20 @@ impl Simulation {
                         self.boids.remove(id);
                     }
                 }
-                Command::AddObstacle | Command::RemoveObstacle { .. } => {
-                    // No live command-routing path into a composed obstacles plugin's own
-                    // state yet (see the enum's own doc: no stable obstacle id exists to
-                    // route through) — always a no-op.
+                Command::AddObstacle {
+                    primitive,
+                    csg_op,
+                    parent,
+                } => self.dispatch_to_hooks(Command::AddObstacle {
+                    primitive,
+                    csg_op,
+                    parent,
+                }),
+                Command::RemoveObstacle { id } => {
+                    self.dispatch_to_hooks(Command::RemoveObstacle { id })
                 }
                 Command::SetEnvironment { day, hour } => {
-                    // Routed generically to every composed StepHook's own apply_command
-                    // (ecology's own implementation is the one real handler) — a no-op if
-                    // ecology isn't composed, matching design/05 §3's own rule.
-                    let cmd = Command::SetEnvironment { day, hour };
-                    for hook in &mut self.step_hooks {
-                        hook.apply_command(&cmd, self.step_count, self.core_params.dt);
-                    }
+                    self.dispatch_to_hooks(Command::SetEnvironment { day, hour })
                 }
                 Command::SetParam { name, value } => {
                     apply_core_param(&mut self.core_params, &name, value);
@@ -346,6 +398,16 @@ impl Simulation {
                     // (Phase 14) — always a documented no-op today (see module doc).
                 }
             }
+        }
+    }
+
+    /// Routes `cmd` to every composed `StepHook`'s own `apply_command` — no plugin-name
+    /// special-casing here, a hook that isn't `cmd`'s intended target just does nothing
+    /// (design/05 §3's own "target not composed" rule). Shared by `SetEnvironment`/
+    /// `AddObstacle`/`RemoveObstacle`, the three commands with a real per-hook handler today.
+    fn dispatch_to_hooks(&mut self, cmd: Command) {
+        for hook in &mut self.step_hooks {
+            hook.apply_command(&cmd, self.step_count, self.core_params.dt);
         }
     }
 

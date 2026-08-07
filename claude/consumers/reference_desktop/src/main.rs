@@ -22,8 +22,8 @@ use murmur_ffi::{
     murmur_boid_count, murmur_checkpoint_buffer_destroy, murmur_checkpoint_buffer_get,
     murmur_checkpoint_buffer_len, murmur_create, murmur_destroy, murmur_last_command_error_count,
     murmur_last_command_error_message, murmur_last_error_message, murmur_plugin_count,
-    murmur_plugin_name, murmur_run_batch, CCheckpoint, CCommand, CKeyValue, CVec3,
-    MurmurCheckpointBuffer, MurmurConfig, MurmurSimulation, CMD_ADD_PREDATOR,
+    murmur_plugin_name, murmur_run_batch, CCheckpoint, CCommand, CKeyValue, CObstaclePrimitive,
+    CVec3, MurmurCheckpointBuffer, MurmurConfig, MurmurSimulation, CMD_ADD_PREDATOR,
     CMD_SET_CHECKPOINT_STRIDE,
 };
 
@@ -278,6 +278,29 @@ fn main() -> ExitCode {
             has_seed: 0,
             env_day: 0,
             env_hour: 0.0,
+            obstacle_primitive: CObstaclePrimitive {
+                kind: 0,
+                center: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                radius: 0.0,
+                half_extent: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                axis: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                half_height: 0.0,
+            },
+            obstacle_csg_op: 0,
+            has_obstacle_parent: 0,
+            obstacle_parent: 0,
         }];
         let mut buffer1: *mut MurmurCheckpointBuffer = ptr::null_mut();
         let status = murmur_run_batch(
@@ -336,6 +359,29 @@ fn main() -> ExitCode {
             has_seed: 0,
             env_day: 0,
             env_hour: 0.0,
+            obstacle_primitive: CObstaclePrimitive {
+                kind: 0,
+                center: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                radius: 0.0,
+                half_extent: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                axis: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                half_height: 0.0,
+            },
+            obstacle_csg_op: 0,
+            has_obstacle_parent: 0,
+            obstacle_parent: 0,
         }];
         let mut buffer2: *mut MurmurCheckpointBuffer = ptr::null_mut();
         let status = murmur_run_batch(

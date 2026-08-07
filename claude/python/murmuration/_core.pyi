@@ -1,6 +1,6 @@
 """Type stubs for the compiled `_core` extension (design/03_observables_bindings.md §2.1)."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -48,6 +48,19 @@ class Command:
     def set_checkpoint_stride(stride: int) -> "Command": ...
     @staticmethod
     def set_environment(day: int, hour: float) -> "Command": ...
+    @staticmethod
+    def add_obstacle(
+        kind: str = "sphere",
+        center: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+        radius: float = 5.0,
+        half_extent: Tuple[float, float, float] = (5.0, 5.0, 5.0),
+        axis: Tuple[float, float, float] = (0.0, 0.0, 1.0),
+        half_height: float = 5.0,
+        csg_op: str = "union",
+        parent: Optional[int] = None,
+    ) -> "Command": ...
+    @staticmethod
+    def remove_obstacle(id: int) -> "Command": ...
 
 class Simulation:
     """A constructed, running simulation. Plugin composition is fixed at construction and

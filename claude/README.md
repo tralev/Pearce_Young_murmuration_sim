@@ -295,3 +295,34 @@ murmur_ffi --test c_smoke` sidesteps it.
 
 575 Rust tests (up from 569), 110 pytest tests (up from 108), clippy/fmt clean including
 `murmur_py`, C smoke test passing against a regenerated header (built fresh, per the note above).
+
+**`Command::AddObstacle`/`RemoveObstacle`'s write direction (2026-08-07, same day).** Closes
+the exact gap the `SetEnvironment` pass above found and deliberately didn't attempt:
+`ObstacleNodeSnapshot` (design/05 §2.2) gained a real `id: u32` field — a base node and its own
+`cut` node (if any) share the same `id`, since these commands address a whole *solid*, not each
+CSG primitive separately. `murmur_obstacles::Obstacle` gained `solid_ids`/`next_obstacle_id`
+tracking (parallel to `scene.solids`, assigned once at construction and grown monotonically by
+`AddObstacle` from there — durable across checkpoints, unlike `ObstacleScene::checkpoint_nodes()`'s
+own general-purpose, still-positional version, kept unchanged for callers with no need for stable
+ids). `Command::AddObstacle` gained real fields (`primitive: ObstaclePrimitiveSnapshot, csg_op:
+CsgOp, parent: Option<u32>`, reusing the checkpoint types as the construction payload — same
+precedent `SetEnvironment` set). Both route through the same `StepHook::validate_command`/
+`apply_command` generic seam: `csg_op: Union` adds a new root solid (`parent` must be `None`);
+`csg_op: Subtract` attaches `primitive` as an existing solid's cut (`parent` must name a solid
+that doesn't already have one — `murmur_obstacles`'s own 2-level CSG limit, rejected as malformed
+otherwise, not silently overwritten); `RemoveObstacle{id}` deletes the whole solid.
+
+Surfaced through both consumer surfaces: `murmur_ffi`'s `CObstacleNode` gained `id`, `CCommand`
+gained `obstacle_primitive`/`obstacle_csg_op`/`has_obstacle_parent`/`obstacle_parent` (header
+regenerated, `reference_desktop`'s own `CCommand` literals updated too); `murmur_py`'s `Command`
+gained `add_obstacle(...)`/`remove_obstacle(id)` (flat scalar args, matching
+`Simulation.__new__`'s own `obstacle_*` `PluginParams` convention rather than a nested object),
+and `Snapshot.scene["obstacles"]` entries gained `id`. Verified end-to-end at three layers per
+command family: real-`Simulation` Rust tests (`murmur_obstacles`'s own integration suite,
+including a rejected-second-cut case), the C smoke test, and Python tests — each adding/removing
+a real obstacle and confirming the checkpoint reflects it, plus a rejected-malformed-command case.
+
+588 Rust tests (up from 575), 112 pytest tests (up from 110), clippy/fmt clean including
+`murmur_py`, C smoke test passing against a freshly rebuilt `.dylib` and regenerated header.
+`AddObstacle`/`RemoveObstacle`/`SetEnvironment` — design/05_viz_contract.md §3's entire write
+direction — are now fully wired; only `RequestMetric`'s native H₂ path remains open.

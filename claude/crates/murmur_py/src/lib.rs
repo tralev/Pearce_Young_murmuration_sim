@@ -29,8 +29,8 @@ use pyo3::types::PyDict;
 
 use murmur_core::batch::Command;
 use murmur_core::{
-    BoidCheckpointFields, CoreParams, PluginParams, Registry, SceneCheckpointFields, SimConfig,
-    Simulation, Species, Vec3,
+    BoidCheckpointFields, CoreParams, CsgOp, ObstaclePrimitiveSnapshot, PluginParams, Registry,
+    SceneCheckpointFields, SimConfig, Simulation, Species, Vec3,
 };
 
 fn map_config_error(e: murmur_core::ConfigError) -> PyErr {
@@ -168,14 +168,8 @@ struct PySnapshot {
 /// Python — Track B's atomic command-queue contract, previously only reachable from Rust/C
 /// (`murmur_ffi`)/the `reference_desktop` consumer. Only the variants with a real behaviour
 /// behind them today are exposed (`AddPredator`, `RemovePredator`, `SetParam`, `Reset`,
-/// `SetCheckpointStride`, `SetEnvironment`) — `AddObstacle`/`RemoveObstacle`/`RequestMetric` are
-/// still documented no-ops in Rust too. `obstacles`'s own *published* state reaches Python via
-/// `Snapshot.scene` (see `PySnapshot` above) — what's still missing for it is a live
-/// command-routing path to *mutate* that state through this queue: design/05's own
-/// `ObstacleNode` checkpoint shape never assigns a stable id to a placed obstacle, so no real
-/// caller could construct a valid `RemoveObstacle{id}` today even if the routing existed
-/// (`batch.rs`'s own module doc has the full explanation) — a real, disclosed, separately-scoped
-/// follow-up, not the "plugin doesn't exist" reason this said before `obstacles` was built.
+/// `SetCheckpointStride`, `SetEnvironment`, `AddObstacle`, `RemoveObstacle`) — `RequestMetric`
+/// is still a documented no-op in Rust too (no native H₂-on-checkpoint path exists yet).
 /// Adding a Python constructor for a command that still can't do anything would be misleading,
 /// not useful. `SetParam` only reaches `CoreParams`' live-mutable subset (`cruise_speed`,
 /// `max_force`, `speed_min_factor`, `dt`, `vision_radius`) — plugin-private params (`phi_p`,
@@ -235,6 +229,72 @@ impl PyCommand {
     fn set_environment(day: u64, hour: f64) -> Self {
         PyCommand {
             inner: Command::SetEnvironment { day, hour },
+        }
+    }
+
+    /// Adds an obstacle (design/05 §3) to a composed `obstacles` plugin's scene — flat scalar
+    /// args, matching `Simulation.__new__`'s own `obstacle_*` `PluginParams` convention rather
+    /// than a nested primitive object. `kind`: `"sphere"` (default, uses `radius`), `"box"`
+    /// (uses `half_extent`), or `"cylinder"` (uses `axis`/`radius`/`half_height`). `csg_op`:
+    /// `"union"` (default, adds a new root solid — `parent` must be `None`) or `"subtract"`
+    /// (attaches as an existing solid's cut — `parent` must be that solid's own `id`, from an
+    /// earlier `Snapshot.scene["obstacles"]` entry; rejected if that solid already has a cut,
+    /// `murmur_obstacles`'s own 2-level CSG limit).
+    #[staticmethod]
+    #[pyo3(signature = (
+        kind = "sphere",
+        center = (0.0, 0.0, 0.0),
+        radius = 5.0,
+        half_extent = (5.0, 5.0, 5.0),
+        axis = (0.0, 0.0, 1.0),
+        half_height = 5.0,
+        csg_op = "union",
+        parent = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn add_obstacle(
+        kind: &str,
+        center: (f64, f64, f64),
+        radius: f64,
+        half_extent: (f64, f64, f64),
+        axis: (f64, f64, f64),
+        half_height: f64,
+        csg_op: &str,
+        parent: Option<u32>,
+    ) -> Self {
+        let center = Vec3::new(center.0, center.1, center.2);
+        let primitive = match kind {
+            "box" => ObstaclePrimitiveSnapshot::Box {
+                center,
+                half_extent: Vec3::new(half_extent.0, half_extent.1, half_extent.2),
+            },
+            "cylinder" => ObstaclePrimitiveSnapshot::Cylinder {
+                center,
+                axis: Vec3::new(axis.0, axis.1, axis.2),
+                radius,
+                half_height,
+            },
+            _ => ObstaclePrimitiveSnapshot::Sphere { center, radius },
+        };
+        let csg_op = match csg_op {
+            "subtract" => CsgOp::Subtract,
+            _ => CsgOp::Union,
+        };
+        PyCommand {
+            inner: Command::AddObstacle {
+                primitive,
+                csg_op,
+                parent,
+            },
+        }
+    }
+
+    /// Removes a whole obstacle (its base and, if any, its own cut together) by the `id`
+    /// `Snapshot.scene["obstacles"]` entries report (design/05 §3).
+    #[staticmethod]
+    fn remove_obstacle(id: u32) -> Self {
+        PyCommand {
+            inner: Command::RemoveObstacle { id },
         }
     }
 }
@@ -1004,6 +1064,7 @@ fn scene_fields_to_dict<'py>(
     let obstacles = pyo3::types::PyList::empty_bound(py);
     for node in &s.obstacles {
         let entry = PyDict::new_bound(py);
+        entry.set_item("id", node.id)?;
         match node.primitive {
             murmur_core::ObstaclePrimitiveSnapshot::Sphere { center, radius } => {
                 entry.set_item("kind", "sphere")?;

@@ -65,8 +65,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use murmur_core::{
-    BoidCtx, ConfigError, CsgOp, ObstacleNodeSnapshot, ObstaclePrimitiveSnapshot, PluginParams,
-    Registry, Rng, SceneCheckpointFields, StepHook, Vec3,
+    BoidCtx, Command, ConfigError, CsgOp, ObstacleNodeSnapshot, ObstaclePrimitiveSnapshot,
+    PluginParams, Registry, Rng, SceneCheckpointFields, StepHook, Vec3,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -148,6 +148,34 @@ impl Primitive {
             },
         }
     }
+
+    /// The reverse of `to_snapshot` — reconstructs a `Primitive` from `Command::AddObstacle`'s
+    /// own `ObstaclePrimitiveSnapshot` payload (design/05 §3).
+    fn from_snapshot(s: ObstaclePrimitiveSnapshot) -> Primitive {
+        match s {
+            ObstaclePrimitiveSnapshot::Sphere { center, radius } => {
+                Primitive::Sphere { center, radius }
+            }
+            ObstaclePrimitiveSnapshot::Box {
+                center,
+                half_extent,
+            } => Primitive::Box {
+                center,
+                half_extent,
+            },
+            ObstaclePrimitiveSnapshot::Cylinder {
+                center,
+                axis,
+                radius,
+                half_height,
+            } => Primitive::Cylinder {
+                center,
+                axis,
+                radius,
+                half_height,
+            },
+        }
+    }
 }
 
 /// A `base` primitive, optionally with a `cut` primitive subtracted out of it — the standard CSG
@@ -198,24 +226,29 @@ impl ObstacleScene {
         self
     }
 
-    /// Maps this scene onto design/05_viz_contract.md §2.2's own flat, parent-indexed CSG node
-    /// list: each `Solid`'s `base` becomes a root-level `Union` node (`parent: None`), and its
-    /// optional `cut` (if present) becomes a `Subtract` node whose `parent` points back at that
-    /// base node's own index — the exact shape the design names.
+    /// Maps this scene onto design/05_viz_contract.md §2.2's own flat CSG node list: each
+    /// `Solid`'s `base` becomes a root-level `Union` node (`parent: None`), and its optional
+    /// `cut` (if present) becomes a `Subtract` node whose `parent` points back at the base's own
+    /// `id` — the exact shape the design names. `id` here is this solid's own position in
+    /// `self.solids` (a plain `ObstacleScene` has no independent id-tracking of its own — see
+    /// `ObstacleNodeSnapshot::id`'s own doc); `Obstacle`'s own `checkpoint_nodes` (below) is the
+    /// stable-id-aware version real `Command::AddObstacle`/`RemoveObstacle` addressing needs.
     pub fn checkpoint_nodes(&self) -> Vec<ObstacleNodeSnapshot> {
         let mut nodes = Vec::with_capacity(self.solids.len() * 2);
-        for solid in &self.solids {
-            let base_index = nodes.len() as u32;
+        for (index, solid) in self.solids.iter().enumerate() {
+            let id = index as u32;
             nodes.push(ObstacleNodeSnapshot {
+                id,
                 primitive: solid.base.to_snapshot(),
                 csg_op: CsgOp::Union,
                 parent: None,
             });
             if let Some(cut) = solid.cut {
                 nodes.push(ObstacleNodeSnapshot {
+                    id,
                     primitive: cut.to_snapshot(),
                     csg_op: CsgOp::Subtract,
-                    parent: Some(base_index),
+                    parent: Some(id),
                 });
             }
         }
@@ -337,14 +370,27 @@ pub struct Obstacle {
     pub params: ObstacleParams,
     pub scene: ObstacleScene,
     colliding: Mutex<HashMap<u32, bool>>,
+    /// Stable ids for `scene.solids`, same length, same order — `solid_ids[i]` is
+    /// `scene.solids[i]`'s own id. This is what makes `ObstacleNodeSnapshot::id`
+    /// round-trippable through `Command::AddObstacle`/`RemoveObstacle` (design/05 §3): a plain
+    /// `ObstacleScene` has no such tracking (see its own `checkpoint_nodes`'s doc), so this
+    /// lives here, on the composed `StepHook` wrapper, not on the general-purpose engine.
+    solid_ids: Vec<u32>,
+    /// Next id `apply_command`'s own `AddObstacle` handler will assign — starts past whatever
+    /// ids `new()` already assigned to the scene it was constructed with.
+    next_obstacle_id: u32,
 }
 
 impl Obstacle {
     pub fn new(params: ObstacleParams, scene: ObstacleScene) -> Self {
+        let solid_ids: Vec<u32> = (0..scene.solids.len() as u32).collect();
+        let next_obstacle_id = solid_ids.len() as u32;
         Obstacle {
             params,
             scene,
             colliding: Mutex::new(HashMap::new()),
+            solid_ids,
+            next_obstacle_id,
         }
     }
 
@@ -353,6 +399,37 @@ impl Obstacle {
     /// `StepHook` trait itself (no other occupant needs it).
     pub fn is_colliding(&self, index: u32) -> Option<bool> {
         self.colliding.lock().unwrap().get(&index).copied()
+    }
+
+    /// Every solid's own id, for tests/callers wanting to address one without replaying
+    /// construction order themselves.
+    pub fn solid_ids(&self) -> &[u32] {
+        &self.solid_ids
+    }
+
+    /// `ObstacleScene::checkpoint_nodes()`'s own shape, but with each node's `id`/`parent`
+    /// drawn from `solid_ids` instead of raw list position — the version real
+    /// `Command::AddObstacle`/`RemoveObstacle` addressing needs, and what
+    /// `checkpoint_scene_fields` actually publishes.
+    fn checkpoint_nodes(&self) -> Vec<ObstacleNodeSnapshot> {
+        let mut nodes = Vec::with_capacity(self.scene.solids.len() * 2);
+        for (solid, &id) in self.scene.solids.iter().zip(&self.solid_ids) {
+            nodes.push(ObstacleNodeSnapshot {
+                id,
+                primitive: solid.base.to_snapshot(),
+                csg_op: CsgOp::Union,
+                parent: None,
+            });
+            if let Some(cut) = solid.cut {
+                nodes.push(ObstacleNodeSnapshot {
+                    id,
+                    primitive: cut.to_snapshot(),
+                    csg_op: CsgOp::Subtract,
+                    parent: Some(id),
+                });
+            }
+        }
+        nodes
     }
 }
 
@@ -369,17 +446,90 @@ impl StepHook for Obstacle {
         }
     }
 
-    /// design/05_viz_contract.md §2.2's `obstacles` — the scene's own `checkpoint_nodes()`,
-    /// now also published through the generic `StepHook` checkpoint-field seam.
+    /// design/05_viz_contract.md §2.2's `obstacles` — this hook's own stable-id-aware
+    /// `checkpoint_nodes()` (not `ObstacleScene::checkpoint_nodes()`'s positional version),
+    /// published through the generic `StepHook` checkpoint-field seam.
     fn checkpoint_scene_fields(&self) -> SceneCheckpointFields {
         SceneCheckpointFields {
-            obstacles: self.scene.checkpoint_nodes(),
+            obstacles: self.checkpoint_nodes(),
             ..Default::default()
         }
     }
 
     fn name(&self) -> &'static str {
         "obstacles"
+    }
+
+    /// design/05 §3's `AddObstacle`/`RemoveObstacle`, read-only precondition half. This
+    /// plugin's own 2-level CSG limit (`Solid` has at most one `cut`, module doc) means
+    /// `AddObstacle{csg_op: Subtract, parent: Some(id)}` needs `id` to name a solid that
+    /// doesn't already have one — checked here, before anything mutates.
+    fn validate_command(&self, cmd: &Command) -> Option<String> {
+        match cmd {
+            Command::RemoveObstacle { id } => (!self.solid_ids.contains(id))
+                .then(|| format!("obstacles: no obstacle with id {id}")),
+            Command::AddObstacle {
+                csg_op: CsgOp::Union,
+                parent: Some(_),
+                ..
+            } => Some("obstacles: AddObstacle with csg_op=Union must have parent=None (a root-level solid can't have a parent)".to_string()),
+            Command::AddObstacle {
+                csg_op: CsgOp::Subtract,
+                parent: None,
+                ..
+            } => Some("obstacles: AddObstacle with csg_op=Subtract needs parent=Some(id) (a cut must attach to an existing solid)".to_string()),
+            Command::AddObstacle {
+                csg_op: CsgOp::Subtract,
+                parent: Some(parent_id),
+                ..
+            } => match self.solid_ids.iter().position(|id| id == parent_id) {
+                None => Some(format!(
+                    "obstacles: AddObstacle parent id {parent_id} does not exist"
+                )),
+                Some(idx) if self.scene.solids[idx].cut.is_some() => Some(format!(
+                    "obstacles: parent id {parent_id} already has a cut (this plugin's own \
+                     2-level CSG only allows one)"
+                )),
+                Some(_) => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// design/05 §3's `AddObstacle`/`RemoveObstacle`, the mutation half — only ever called
+    /// after `validate_command` already accepted `cmd`, so the "invalid combination"/"unknown
+    /// id" branches above are unreachable here in practice.
+    fn apply_command(&mut self, cmd: &Command, _step_count: u64, _dt: f64) {
+        match cmd {
+            Command::AddObstacle {
+                primitive,
+                csg_op: CsgOp::Union,
+                parent: None,
+            } => {
+                self.scene
+                    .solids
+                    .push(Solid::new(Primitive::from_snapshot(*primitive)));
+                self.solid_ids.push(self.next_obstacle_id);
+                self.next_obstacle_id += 1;
+            }
+            Command::AddObstacle {
+                primitive,
+                csg_op: CsgOp::Subtract,
+                parent: Some(parent_id),
+            } => {
+                if let Some(idx) = self.solid_ids.iter().position(|id| id == parent_id) {
+                    self.scene.solids[idx].cut = Some(Primitive::from_snapshot(*primitive));
+                }
+            }
+            Command::AddObstacle { .. } => {} // an invalid combination validate_command rejects
+            Command::RemoveObstacle { id } => {
+                if let Some(idx) = self.solid_ids.iter().position(|i| i == id) {
+                    self.scene.solids.remove(idx);
+                    self.solid_ids.remove(idx);
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -778,6 +928,199 @@ mod tests {
         let bad = PluginParams::new().with("obstacle_min_gap", -5.0);
         let hook = reg.resolve_step_hook("obstacles", &bad).unwrap();
         assert_eq!(hook.name(), "obstacles");
+    }
+
+    fn empty_obstacle() -> Obstacle {
+        Obstacle::new(
+            ObstacleParams::builder().build().unwrap(),
+            ObstacleScene::new(),
+        )
+    }
+
+    fn sphere_snapshot(radius: f64) -> ObstaclePrimitiveSnapshot {
+        ObstaclePrimitiveSnapshot::Sphere {
+            center: Vec3::ZERO,
+            radius,
+        }
+    }
+
+    #[test]
+    fn apply_command_add_obstacle_union_pushes_a_new_root_solid_with_a_fresh_id() {
+        let mut hook = empty_obstacle();
+        assert!(hook.solid_ids().is_empty());
+        hook.apply_command(
+            &Command::AddObstacle {
+                primitive: sphere_snapshot(5.0),
+                csg_op: CsgOp::Union,
+                parent: None,
+            },
+            0,
+            1.0,
+        );
+        assert_eq!(hook.solid_ids(), &[0]);
+        let nodes = hook.checkpoint_nodes();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].id, 0);
+        assert_eq!(nodes[0].csg_op, CsgOp::Union);
+        assert_eq!(nodes[0].parent, None);
+    }
+
+    #[test]
+    fn apply_command_add_obstacle_subtract_attaches_a_cut_to_an_existing_parent() {
+        let mut hook = empty_obstacle();
+        hook.apply_command(
+            &Command::AddObstacle {
+                primitive: sphere_snapshot(5.0),
+                csg_op: CsgOp::Union,
+                parent: None,
+            },
+            0,
+            1.0,
+        );
+        let root_id = hook.solid_ids()[0];
+        hook.apply_command(
+            &Command::AddObstacle {
+                primitive: sphere_snapshot(3.0),
+                csg_op: CsgOp::Subtract,
+                parent: Some(root_id),
+            },
+            0,
+            1.0,
+        );
+        let nodes = hook.checkpoint_nodes();
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(nodes[1].csg_op, CsgOp::Subtract);
+        assert_eq!(nodes[1].id, root_id);
+        assert_eq!(nodes[1].parent, Some(root_id));
+    }
+
+    #[test]
+    fn apply_command_remove_obstacle_removes_the_whole_solid_by_id() {
+        let mut hook = empty_obstacle();
+        hook.apply_command(
+            &Command::AddObstacle {
+                primitive: sphere_snapshot(5.0),
+                csg_op: CsgOp::Union,
+                parent: None,
+            },
+            0,
+            1.0,
+        );
+        let id = hook.solid_ids()[0];
+        hook.apply_command(&Command::RemoveObstacle { id }, 0, 1.0);
+        assert!(hook.solid_ids().is_empty());
+        assert!(hook.checkpoint_nodes().is_empty());
+    }
+
+    #[test]
+    fn ids_assigned_at_construction_keep_growing_monotonically_after_apply_command() {
+        let scene = ObstacleScene::new().with_solid(Solid::new(Primitive::Sphere {
+            center: Vec3::ZERO,
+            radius: 1.0,
+        }));
+        let mut hook = Obstacle::new(ObstacleParams::builder().build().unwrap(), scene);
+        assert_eq!(hook.solid_ids(), &[0]); // the construction-time solid gets id 0
+        hook.apply_command(
+            &Command::AddObstacle {
+                primitive: sphere_snapshot(2.0),
+                csg_op: CsgOp::Union,
+                parent: None,
+            },
+            0,
+            1.0,
+        );
+        assert_eq!(hook.solid_ids(), &[0, 1]); // the next id continues from there, not reused
+    }
+
+    #[test]
+    fn validate_command_rejects_remove_of_an_unknown_id() {
+        let hook = empty_obstacle();
+        let reason = hook.validate_command(&Command::RemoveObstacle { id: 99 });
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn validate_command_accepts_remove_of_a_real_id() {
+        let mut hook = empty_obstacle();
+        hook.apply_command(
+            &Command::AddObstacle {
+                primitive: sphere_snapshot(5.0),
+                csg_op: CsgOp::Union,
+                parent: None,
+            },
+            0,
+            1.0,
+        );
+        let id = hook.solid_ids()[0];
+        assert!(hook
+            .validate_command(&Command::RemoveObstacle { id })
+            .is_none());
+    }
+
+    #[test]
+    fn validate_command_rejects_union_with_a_parent() {
+        let hook = empty_obstacle();
+        let reason = hook.validate_command(&Command::AddObstacle {
+            primitive: sphere_snapshot(1.0),
+            csg_op: CsgOp::Union,
+            parent: Some(0),
+        });
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn validate_command_rejects_subtract_without_a_parent() {
+        let hook = empty_obstacle();
+        let reason = hook.validate_command(&Command::AddObstacle {
+            primitive: sphere_snapshot(1.0),
+            csg_op: CsgOp::Subtract,
+            parent: None,
+        });
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn validate_command_rejects_subtract_onto_a_nonexistent_parent() {
+        let hook = empty_obstacle();
+        let reason = hook.validate_command(&Command::AddObstacle {
+            primitive: sphere_snapshot(1.0),
+            csg_op: CsgOp::Subtract,
+            parent: Some(42),
+        });
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn validate_command_rejects_subtract_onto_a_parent_that_already_has_a_cut() {
+        let mut hook = empty_obstacle();
+        hook.apply_command(
+            &Command::AddObstacle {
+                primitive: sphere_snapshot(5.0),
+                csg_op: CsgOp::Union,
+                parent: None,
+            },
+            0,
+            1.0,
+        );
+        let id = hook.solid_ids()[0];
+        hook.apply_command(
+            &Command::AddObstacle {
+                primitive: sphere_snapshot(3.0),
+                csg_op: CsgOp::Subtract,
+                parent: Some(id),
+            },
+            0,
+            1.0,
+        );
+        let reason = hook.validate_command(&Command::AddObstacle {
+            primitive: sphere_snapshot(1.0),
+            csg_op: CsgOp::Subtract,
+            parent: Some(id),
+        });
+        assert!(
+            reason.is_some(),
+            "a second cut on the same solid must be rejected"
+        );
     }
 
     #[test]

@@ -238,6 +238,52 @@ def test_set_environment_command_with_a_non_finite_hour_raises_value_error():
         sim.run_batch_checked(1, 1, [m.Command.set_environment(0, float("nan"))])
 
 
+def test_add_and_remove_obstacle_commands_reach_a_real_composed_obstacles_plugin():
+    # design/05_viz_contract.md §3's AddObstacle/RemoveObstacle write direction -- proves it
+    # reaches a real composed obstacles plugin from Python, not just murmur_core's own Rust
+    # tests / murmur_ffi's C round trip. The construction-time composition always places one
+    # default sphere (id 0, from PluginParams defaults); this removes it and adds a box.
+    sim = m.Simulation(
+        boid_count=10,
+        mode="pearce",
+        step_hooks=["obstacles"],
+        obstacle_kind=0.0,
+        obstacle_radius=5.0,
+        init_radius=8.0,
+        init_seed=1,
+    )
+    sim.run_batch_checked(
+        1,
+        1,
+        [
+            m.Command.remove_obstacle(0),
+            m.Command.add_obstacle(kind="box", center=(1.0, 2.0, 3.0), half_extent=(4.0, 4.0, 4.0)),
+        ],
+    )
+    obstacles = sim.snapshot().scene["obstacles"]
+    assert len(obstacles) == 1
+    assert obstacles[0]["kind"] == "box"
+    assert obstacles[0]["id"] == 1  # follows the removed id-0 sphere
+
+
+def test_add_obstacle_subtract_onto_a_nonexistent_parent_raises_value_error():
+    sim = m.Simulation(
+        boid_count=10,
+        mode="pearce",
+        step_hooks=["obstacles"],
+        obstacle_kind=0.0,
+        obstacle_radius=5.0,
+        init_radius=8.0,
+        init_seed=1,
+    )
+    with pytest.raises(ValueError):
+        sim.run_batch_checked(
+            1,
+            1,
+            [m.Command.add_obstacle(kind="sphere", radius=1.0, csg_op="subtract", parent=99)],
+        )
+
+
 def test_warnings_is_empty_when_cell_size_already_matches_vision_radius():
     sim = make_sim(10)
     assert sim.warnings() == []

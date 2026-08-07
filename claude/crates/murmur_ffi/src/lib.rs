@@ -478,6 +478,14 @@ pub struct CCommand {
     /// `SetEnvironment` only — `Command::SetEnvironment`'s own `day`/`hour`.
     pub env_day: u64,
     pub env_hour: f64,
+    /// `AddObstacle` only — `Command::AddObstacle`'s own `primitive`/`csg_op`/`parent`.
+    /// `obstacle_csg_op`: `0` = Union, `1` = Subtract. `has_obstacle_parent`/`obstacle_parent`
+    /// encode `parent: Option<u32>` the same `has_x`/`x` way every other optional field here
+    /// does. `RemoveObstacle` reuses `id` above, not a field of its own.
+    pub obstacle_primitive: CObstaclePrimitive,
+    pub obstacle_csg_op: u8,
+    pub has_obstacle_parent: u8,
+    pub obstacle_parent: u32,
 }
 
 /// # Safety
@@ -499,7 +507,19 @@ unsafe fn decode_commands(ptr: *const CCommand, len: usize) -> Result<Vec<Comman
                 velocity: c.velocity.into(),
             },
             CMD_REMOVE_PREDATOR => Command::RemovePredator { id: c.id },
-            CMD_ADD_OBSTACLE => Command::AddObstacle,
+            CMD_ADD_OBSTACLE => Command::AddObstacle {
+                primitive: obstacle_primitive_from_c(c.obstacle_primitive),
+                csg_op: if c.obstacle_csg_op == 1 {
+                    murmur_core::CsgOp::Subtract
+                } else {
+                    murmur_core::CsgOp::Union
+                },
+                parent: if c.has_obstacle_parent != 0 {
+                    Some(c.obstacle_parent)
+                } else {
+                    None
+                },
+            },
             CMD_REMOVE_OBSTACLE => Command::RemoveObstacle { id: c.id },
             CMD_SET_PARAM => Command::SetParam {
                 name: cstr_to_string(c.name).map_err(|e| format!("command {i}: {e}"))?,
@@ -646,13 +666,15 @@ pub struct CObstaclePrimitive {
     pub half_height: f64,
 }
 
-/// design/05_viz_contract.md §2.2's own flat, parent-indexed obstacle-scene node list —
+/// design/05_viz_contract.md §2.2's own flat obstacle-scene node list —
 /// `murmur_core::ObstacleNodeSnapshot`'s own shape. `csg_op`: `0` = Union, `1` = Subtract.
 /// `has_parent`/`parent` encode `Option<u32>` the same `has_x`/`x` way every other optional
-/// field in this crate does.
+/// field in this crate does. `id` is this node's own address (`ObstacleNodeSnapshot::id`'s own
+/// doc) — round-trippable through a later `Command::AddObstacle`/`RemoveObstacle`.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct CObstacleNode {
+    pub id: u32,
     pub primitive: CObstaclePrimitive,
     pub csg_op: u8,
     pub has_parent: u8,
@@ -747,6 +769,27 @@ fn c_obstacle_primitive(p: murmur_core::ObstaclePrimitiveSnapshot) -> CObstacleP
     }
 }
 
+/// The reverse of `c_obstacle_primitive` — `Command::AddObstacle`'s own C-encoded payload
+/// (`CCommand`'s `obstacle_primitive` field) back into a real `ObstaclePrimitiveSnapshot`.
+fn obstacle_primitive_from_c(p: CObstaclePrimitive) -> murmur_core::ObstaclePrimitiveSnapshot {
+    match p.kind {
+        1 => murmur_core::ObstaclePrimitiveSnapshot::Box {
+            center: p.center.into(),
+            half_extent: p.half_extent.into(),
+        },
+        2 => murmur_core::ObstaclePrimitiveSnapshot::Cylinder {
+            center: p.center.into(),
+            axis: p.axis.into(),
+            radius: p.radius,
+            half_height: p.half_height,
+        },
+        _ => murmur_core::ObstaclePrimitiveSnapshot::Sphere {
+            center: p.center.into(),
+            radius: p.radius,
+        },
+    }
+}
+
 /// Owns the repr(C)-converted per-checkpoint arrays so pointers handed out by
 /// `murmur_checkpoint_buffer_get` stay valid for the buffer's lifetime.
 pub struct MurmurCheckpointBuffer {
@@ -811,6 +854,7 @@ impl MurmurCheckpointBuffer {
                     .obstacles
                     .iter()
                     .map(|n| CObstacleNode {
+                        id: n.id,
                         primitive: c_obstacle_primitive(n.primitive),
                         csg_op: match n.csg_op {
                             murmur_core::CsgOp::Union => 0,
@@ -1226,6 +1270,29 @@ mod tests {
                 has_seed: 0,
                 env_day: 0,
                 env_hour: 0.0,
+                obstacle_primitive: CObstaclePrimitive {
+                    kind: 0,
+                    center: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    radius: 0.0,
+                    half_extent: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    axis: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    half_height: 0.0,
+                },
+                obstacle_csg_op: 0,
+                has_obstacle_parent: 0,
+                obstacle_parent: 0,
             }];
             let status = murmur_run_batch(
                 sim,
@@ -1281,6 +1348,29 @@ mod tests {
                 has_seed: 0,
                 env_day: 0,
                 env_hour: 0.0,
+                obstacle_primitive: CObstaclePrimitive {
+                    kind: 0,
+                    center: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    radius: 0.0,
+                    half_extent: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    axis: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    half_height: 0.0,
+                },
+                obstacle_csg_op: 0,
+                has_obstacle_parent: 0,
+                obstacle_parent: 0,
             }];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
             let status = murmur_run_batch(
@@ -1423,6 +1513,29 @@ mod tests {
                     has_seed: 1,
                     env_day: 0,
                     env_hour: 0.0,
+                    obstacle_primitive: CObstaclePrimitive {
+                        kind: 0,
+                        center: CVec3 {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        radius: 0.0,
+                        half_extent: CVec3 {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        axis: CVec3 {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        half_height: 0.0,
+                    },
+                    obstacle_csg_op: 0,
+                    has_obstacle_parent: 0,
+                    obstacle_parent: 0,
                 },
                 CCommand {
                     kind: CMD_ADD_PREDATOR,
@@ -1445,6 +1558,29 @@ mod tests {
                     has_seed: 0,
                     env_day: 0,
                     env_hour: 0.0,
+                    obstacle_primitive: CObstaclePrimitive {
+                        kind: 0,
+                        center: CVec3 {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        radius: 0.0,
+                        half_extent: CVec3 {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        axis: CVec3 {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        half_height: 0.0,
+                    },
+                    obstacle_csg_op: 0,
+                    has_obstacle_parent: 0,
+                    obstacle_parent: 0,
                 },
             ];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
@@ -1508,6 +1644,29 @@ mod tests {
                 has_seed: 0,
                 env_day: 9,
                 env_hour: 14.5,
+                obstacle_primitive: CObstaclePrimitive {
+                    kind: 0,
+                    center: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    radius: 0.0,
+                    half_extent: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    axis: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    half_height: 0.0,
+                },
+                obstacle_csg_op: 0,
+                has_obstacle_parent: 0,
+                obstacle_parent: 0,
             }];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
             let status = murmur_run_batch(
@@ -1524,6 +1683,129 @@ mod tests {
             assert_eq!(cp0.has_environment, 1);
             assert_eq!(cp0.environment.day, 9);
             assert!((cp0.environment.hour - 14.5).abs() < 1e-6);
+
+            murmur_checkpoint_buffer_destroy(out_buffer);
+            murmur_destroy(sim);
+        }
+    }
+
+    /// A minimal, all-fields-zeroed `CCommand` of the given `kind` — cuts the boilerplate for
+    /// tests that only care about a couple of fields.
+    fn zeroed_command(kind: u8) -> CCommand {
+        CCommand {
+            kind,
+            position: CVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            velocity: CVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            id: 0,
+            name: ptr::null(),
+            value: 0.0,
+            count: 0,
+            stride: 0,
+            seed: 0,
+            has_seed: 0,
+            env_day: 0,
+            env_hour: 0.0,
+            obstacle_primitive: CObstaclePrimitive {
+                kind: 0,
+                center: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                radius: 0.0,
+                half_extent: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                axis: CVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                half_height: 0.0,
+            },
+            obstacle_csg_op: 0,
+            has_obstacle_parent: 0,
+            obstacle_parent: 0,
+        }
+    }
+
+    /// `CMD_ADD_OBSTACLE`/`CMD_REMOVE_OBSTACLE`'s write direction, round-tripped through the
+    /// real C encoding: the construction-time default sphere (id 0) is removed and a new box
+    /// added, and the resulting `CCheckpoint` reflects exactly that.
+    #[test]
+    fn add_and_remove_obstacle_commands_round_trip_through_the_c_encoding() {
+        unsafe {
+            let strings = default_config_strings();
+            let mut config = default_config(&strings, 5);
+            let hook = c_str("obstacles");
+            let hooks = [hook.as_ptr()];
+            config.step_hooks = hooks.as_ptr();
+            config.step_hooks_len = 1;
+            let sim = murmur_create(&config);
+            assert!(
+                !sim.is_null(),
+                "{:?}",
+                CStr::from_ptr(murmur_last_error_message())
+            );
+
+            let remove = CCommand {
+                id: 0,
+                ..zeroed_command(CMD_REMOVE_OBSTACLE)
+            };
+            let add = CCommand {
+                obstacle_primitive: CObstaclePrimitive {
+                    kind: 1, // Box
+                    center: CVec3 {
+                        x: 1.0,
+                        y: 2.0,
+                        z: 3.0,
+                    },
+                    radius: 0.0,
+                    half_extent: CVec3 {
+                        x: 4.0,
+                        y: 4.0,
+                        z: 4.0,
+                    },
+                    axis: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    half_height: 0.0,
+                },
+                obstacle_csg_op: 0, // Union
+                has_obstacle_parent: 0,
+                obstacle_parent: 0,
+                ..zeroed_command(CMD_ADD_OBSTACLE)
+            };
+            let commands = [remove, add];
+
+            let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
+            let status = murmur_run_batch(
+                sim,
+                1,
+                1,
+                commands.as_ptr(),
+                commands.len(),
+                &mut out_buffer,
+            );
+            assert_eq!(status, 0);
+
+            let cp0 = murmur_checkpoint_buffer_get(out_buffer, 0);
+            assert_eq!(cp0.obstacle_count, 1);
+            let node = *cp0.obstacles;
+            assert_eq!(node.id, 1, "the new obstacle follows the removed id-0 one");
+            assert_eq!(node.primitive.kind, 1, "expected a Box");
 
             murmur_checkpoint_buffer_destroy(out_buffer);
             murmur_destroy(sim);
@@ -1571,6 +1853,29 @@ mod tests {
                 has_seed: 0,
                 env_day: 0,
                 env_hour: 0.0,
+                obstacle_primitive: CObstaclePrimitive {
+                    kind: 0,
+                    center: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    radius: 0.0,
+                    half_extent: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    axis: CVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    half_height: 0.0,
+                },
+                obstacle_csg_op: 0,
+                has_obstacle_parent: 0,
+                obstacle_parent: 0,
             }];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
             let status = murmur_run_batch(
