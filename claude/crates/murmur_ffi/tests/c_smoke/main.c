@@ -69,7 +69,7 @@ int main(void) {
         return 1;
     }
 
-    struct CCommand commands[4];
+    struct CCommand commands[5];
     memset(commands, 0, sizeof(commands));
     commands[0].kind = CMD_SET_CHECKPOINT_STRIDE;
     commands[0].stride = 5;
@@ -92,9 +92,13 @@ int main(void) {
     commands[3].obstacle_primitive.half_extent.y = 4.0;
     commands[3].obstacle_primitive.half_extent.z = 4.0;
     commands[3].obstacle_csg_op = 0; /* Union */
+    /* CMD_REQUEST_METRIC{H2Curve}'s write direction: a real native H2 eigensolve reaches a
+     * real composed Simulation from real C. */
+    commands[4].kind = CMD_REQUEST_METRIC;
+    commands[4].metric_kind = METRIC_H2_CURVE;
 
     struct MurmurCheckpointBuffer *buffer = NULL;
-    int32_t status = murmur_run_batch(sim, 15, 1, commands, 4, &buffer);
+    int32_t status = murmur_run_batch(sim, 15, 1, commands, 5, &buffer);
     if (status != 0) {
         fprintf(stderr, "murmur_run_batch failed with status %d\n", status);
         return 1;
@@ -141,6 +145,18 @@ int main(void) {
                 cp.obstacle_count, cp.obstacle_count ? cp.obstacles[0].id : 0,
                 cp.obstacle_count ? cp.obstacles[0].primitive.kind : 0);
         return 1;
+    }
+    if (!cp.has_h2_result || cp.h2_result.m_star < 2) {
+        fprintf(stderr, "CMD_REQUEST_METRIC{H2Curve} didn't reach the native eigensolve: "
+                        "has_h2_result=%u m_star=%u\n",
+                cp.has_h2_result, cp.h2_result.m_star);
+        return 1;
+    }
+    for (uint32_t i = 0; i < cp.boid_count; i++) {
+        if (!cp.boids[i].has_consensus_degree) {
+            fprintf(stderr, "boid %u has no consensus_degree after CMD_REQUEST_METRIC\n", i);
+            return 1;
+        }
     }
 
     murmur_checkpoint_buffer_destroy(buffer);

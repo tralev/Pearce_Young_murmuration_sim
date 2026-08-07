@@ -457,6 +457,13 @@ pub const CMD_RESET: u8 = 6;
 pub const CMD_SET_CHECKPOINT_STRIDE: u8 = 7;
 pub const CMD_REQUEST_METRIC: u8 = 8;
 
+// `CCommand::metric_kind` tag values — `Command::RequestMetric`'s own `MetricKind` (design/05
+// §3). Only `METRIC_H2_CURVE` has a real native handler; the other three are documented no-ops.
+pub const METRIC_H2_CURVE: u8 = 0;
+pub const METRIC_DENSITY_SCALING: u8 = 1;
+pub const METRIC_SHAPE_PCA: u8 = 2;
+pub const METRIC_TAU_RHO: u8 = 3;
+
 /// A flat, always-fully-sized encoding of `murmur_core::batch::Command` — see module doc
 /// "Command encoding." `kind` selects one of the `CMD_*` constants; only the fields that
 /// variant actually uses are meaningful.
@@ -486,6 +493,8 @@ pub struct CCommand {
     pub obstacle_csg_op: u8,
     pub has_obstacle_parent: u8,
     pub obstacle_parent: u32,
+    /// `RequestMetric` only — one of the `METRIC_*` constants.
+    pub metric_kind: u8,
 }
 
 /// # Safety
@@ -534,7 +543,14 @@ unsafe fn decode_commands(ptr: *const CCommand, len: usize) -> Result<Vec<Comman
                 seed: if c.has_seed != 0 { Some(c.seed) } else { None },
             },
             CMD_SET_CHECKPOINT_STRIDE => Command::SetCheckpointStride { stride: c.stride },
-            CMD_REQUEST_METRIC => Command::RequestMetric,
+            CMD_REQUEST_METRIC => Command::RequestMetric {
+                kind: match c.metric_kind {
+                    METRIC_DENSITY_SCALING => murmur_core::MetricKind::DensityScaling,
+                    METRIC_SHAPE_PCA => murmur_core::MetricKind::ShapePCA,
+                    METRIC_TAU_RHO => murmur_core::MetricKind::TauRho,
+                    _ => murmur_core::MetricKind::H2Curve,
+                },
+            },
             other => return Err(format!("command {i}: unknown kind {other}")),
         };
         out.push(cmd);
@@ -568,6 +584,8 @@ pub struct CBoidSnapshot {
     pub blackening: f32,
     pub has_spin: u8,
     pub spin: f32,
+    pub has_consensus_degree: u8,
+    pub consensus_degree: u8,
 }
 
 fn species_code(s: Species) -> u16 {
@@ -681,6 +699,14 @@ pub struct CObstacleNode {
     pub parent: u32,
 }
 
+/// design/05_viz_contract.md §2.2's `H2Result` — `murmur_core::H2ResultSnapshot`'s own shape.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CH2Result {
+    pub m_star: u32,
+    pub h2_at_m_star: f64,
+}
+
 /// One checkpoint's data, C-ABI shape (design/05 §2's per-boid/scene-level fields). `boids`/
 /// `predators` point into arrays owned by the `MurmurCheckpointBuffer` this came from — valid
 /// until `murmur_checkpoint_buffer_destroy` is called on that buffer, not just for this call.
@@ -707,6 +733,8 @@ pub struct CCheckpoint {
     pub dynamic_vision_range: f32,
     pub obstacle_count: u32,
     pub obstacles: *const CObstacleNode,
+    pub has_h2_result: u8,
+    pub h2_result: CH2Result,
 }
 
 fn opt_f32(v: Option<f32>) -> (u8, f32) {
@@ -830,6 +858,8 @@ impl MurmurCheckpointBuffer {
                             blackening,
                             has_spin,
                             spin,
+                            has_consensus_degree: f.consensus_degree.is_some() as u8,
+                            consensus_degree: f.consensus_degree.unwrap_or(0),
                         }
                     })
                     .collect()
@@ -965,6 +995,11 @@ pub unsafe extern "C" fn murmur_checkpoint_buffer_get(
         dynamic_vision_range: 0.0,
         obstacle_count: 0,
         obstacles: ptr::null(),
+        has_h2_result: 0,
+        h2_result: CH2Result {
+            m_star: 0,
+            h2_at_m_star: 0.0,
+        },
     };
     if buf.is_null() {
         return zeroed;
@@ -1042,6 +1077,14 @@ pub unsafe extern "C" fn murmur_checkpoint_buffer_get(
         dynamic_vision_range: scene.dynamic_vision_range.unwrap_or(0.0),
         obstacle_count: c_obstacles.len() as u32,
         obstacles: c_obstacles.as_ptr(),
+        has_h2_result: scene.h2_result.is_some() as u8,
+        h2_result: scene
+            .h2_result
+            .map(|r| CH2Result {
+                m_star: r.m_star,
+                h2_at_m_star: r.h2_at_m_star,
+            })
+            .unwrap_or(zeroed.h2_result),
     }
 }
 
@@ -1293,6 +1336,7 @@ mod tests {
                 obstacle_csg_op: 0,
                 has_obstacle_parent: 0,
                 obstacle_parent: 0,
+                metric_kind: 0,
             }];
             let status = murmur_run_batch(
                 sim,
@@ -1371,6 +1415,7 @@ mod tests {
                 obstacle_csg_op: 0,
                 has_obstacle_parent: 0,
                 obstacle_parent: 0,
+                metric_kind: 0,
             }];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
             let status = murmur_run_batch(
@@ -1427,12 +1472,13 @@ mod tests {
     fn repr_c_struct_sizes_and_alignments_are_stable_on_this_platform() {
         assert_eq!(size_of::<CVec3>(), 24);
         assert_eq!(align_of::<CVec3>(), 8);
-        // 104, not the pre-checkpoint-field-wiring 64: two CVec3 (48) + species_code/theta (2
+        // 112, not the pre-checkpoint-field-wiring 64: two CVec3 (48) + species_code/theta (2
         // padded to 8 + 8 = 16) + 6 `has_x: u8`/`x: {u8, f32}` pairs (5 f32 pairs at 8 bytes
-        // each via alignment padding + 1 u8 pair, 40) -- a real, disclosed schema growth
+        // each via alignment padding + 1 u8 pair, 40) + `has_consensus_degree`/
+        // `consensus_degree` (both u8, padded to 8) -- a real, disclosed schema growth
         // (design/05_viz_contract.md §2.1's state/speed_mult/threat_proximity/panic/
-        // blackening/spin), not a regression.
-        assert_eq!(size_of::<CBoidSnapshot>(), 104);
+        // blackening/spin/consensus_degree), not a regression.
+        assert_eq!(size_of::<CBoidSnapshot>(), 112);
         assert_eq!(align_of::<CBoidSnapshot>(), 8);
         assert_eq!(align_of::<CCheckpoint>(), 8);
         assert_eq!(align_of::<CMetrics>(), 8);
@@ -1536,6 +1582,7 @@ mod tests {
                     obstacle_csg_op: 0,
                     has_obstacle_parent: 0,
                     obstacle_parent: 0,
+                    metric_kind: 0,
                 },
                 CCommand {
                     kind: CMD_ADD_PREDATOR,
@@ -1581,6 +1628,7 @@ mod tests {
                     obstacle_csg_op: 0,
                     has_obstacle_parent: 0,
                     obstacle_parent: 0,
+                    metric_kind: 0,
                 },
             ];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
@@ -1667,6 +1715,7 @@ mod tests {
                 obstacle_csg_op: 0,
                 has_obstacle_parent: 0,
                 obstacle_parent: 0,
+                metric_kind: 0,
             }];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
             let status = murmur_run_batch(
@@ -1736,6 +1785,7 @@ mod tests {
             obstacle_csg_op: 0,
             has_obstacle_parent: 0,
             obstacle_parent: 0,
+            metric_kind: 0,
         }
     }
 
@@ -1786,6 +1836,7 @@ mod tests {
                 obstacle_csg_op: 0, // Union
                 has_obstacle_parent: 0,
                 obstacle_parent: 0,
+                metric_kind: 0,
                 ..zeroed_command(CMD_ADD_OBSTACLE)
             };
             let commands = [remove, add];
@@ -1806,6 +1857,53 @@ mod tests {
             let node = *cp0.obstacles;
             assert_eq!(node.id, 1, "the new obstacle follows the removed id-0 one");
             assert_eq!(node.primitive.kind, 1, "expected a Box");
+
+            murmur_checkpoint_buffer_destroy(out_buffer);
+            murmur_destroy(sim);
+        }
+    }
+
+    /// `CMD_REQUEST_METRIC{METRIC_H2_CURVE}`'s write direction, round-tripped through the real
+    /// C encoding — a real `h2_result`/per-boid `consensus_degree` reach a real `CCheckpoint`.
+    #[test]
+    fn request_metric_h2_curve_round_trips_through_the_c_encoding() {
+        unsafe {
+            let strings = default_config_strings();
+            let config = default_config(&strings, 20);
+            let sim = murmur_create(&config);
+            assert!(
+                !sim.is_null(),
+                "{:?}",
+                CStr::from_ptr(murmur_last_error_message())
+            );
+
+            let commands = [CCommand {
+                metric_kind: METRIC_H2_CURVE,
+                ..zeroed_command(CMD_REQUEST_METRIC)
+            }];
+            let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
+            let status = murmur_run_batch(
+                sim,
+                1,
+                1,
+                commands.as_ptr(),
+                commands.len(),
+                &mut out_buffer,
+            );
+            assert_eq!(status, 0);
+
+            let cp0 = murmur_checkpoint_buffer_get(out_buffer, 0);
+            assert_eq!(cp0.has_h2_result, 1);
+            assert!(cp0.h2_result.m_star >= 2);
+            assert!(cp0.h2_result.h2_at_m_star.is_finite());
+            assert_eq!(cp0.boid_count, 20);
+            for i in 0..cp0.boid_count {
+                let b = &*cp0.boids.add(i as usize);
+                assert_eq!(
+                    b.has_consensus_degree, 1,
+                    "boid {i} should have a real consensus_degree"
+                );
+            }
 
             murmur_checkpoint_buffer_destroy(out_buffer);
             murmur_destroy(sim);
@@ -1876,6 +1974,7 @@ mod tests {
                 obstacle_csg_op: 0,
                 has_obstacle_parent: 0,
                 obstacle_parent: 0,
+                metric_kind: 0,
             }];
             let mut out_buffer: *mut MurmurCheckpointBuffer = ptr::null_mut();
             let status = murmur_run_batch(

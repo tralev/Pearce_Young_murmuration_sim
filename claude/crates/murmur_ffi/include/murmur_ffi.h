@@ -40,6 +40,14 @@
 
 #define CMD_REQUEST_METRIC 8
 
+#define METRIC_H2_CURVE 0
+
+#define METRIC_DENSITY_SCALING 1
+
+#define METRIC_SHAPE_PCA 2
+
+#define METRIC_TAU_RHO 3
+
 /**
  * Owns the repr(C)-converted per-checkpoint arrays so pointers handed out by
  * `murmur_checkpoint_buffer_get` stay valid for the buffer's lifetime.
@@ -140,6 +148,8 @@ typedef struct CBoidSnapshot {
   float blackening;
   uint8_t has_spin;
   float spin;
+  uint8_t has_consensus_degree;
+  uint8_t consensus_degree;
 } CBoidSnapshot;
 
 typedef struct CPredatorSnapshot {
@@ -221,6 +231,14 @@ typedef struct CObstacleNode {
 } CObstacleNode;
 
 /**
+ * design/05_viz_contract.md §2.2's `H2Result` — `murmur_core::H2ResultSnapshot`'s own shape.
+ */
+typedef struct CH2Result {
+  uint32_t m_star;
+  double h2_at_m_star;
+} CH2Result;
+
+/**
  * One checkpoint's data, C-ABI shape (design/05 §2's per-boid/scene-level fields). `boids`/
  * `predators` point into arrays owned by the `MurmurCheckpointBuffer` this came from — valid
  * until `murmur_checkpoint_buffer_destroy` is called on that buffer, not just for this call.
@@ -247,6 +265,8 @@ typedef struct CCheckpoint {
   float dynamic_vision_range;
   uint32_t obstacle_count;
   const struct CObstacleNode *obstacles;
+  uint8_t has_h2_result;
+  struct CH2Result h2_result;
 } CCheckpoint;
 
 /**
@@ -284,6 +304,10 @@ typedef struct CCommand {
   uint8_t obstacle_csg_op;
   uint8_t has_obstacle_parent;
   uint32_t obstacle_parent;
+  /**
+   * `RequestMetric` only — one of the `METRIC_*` constants.
+   */
+  uint8_t metric_kind;
 } CCommand;
 
 /**

@@ -453,3 +453,120 @@ fn session_header_is_stable_across_the_simulations_lifetime() {
     assert_eq!(h1.build_hash, h2.build_hash);
     assert_eq!(h1.composition, h2.composition);
 }
+
+/// design/05_viz_contract.md §3's `RequestMetric{H2Curve}` write direction, exercised
+/// end-to-end through a real `Simulation` (`DummyInit` places 20 boids at distinct positions,
+/// enough for a real, non-degenerate m-NN graph) — proves `murmur_core::h2`'s own native
+/// eigensolve genuinely reaches a real `Checkpoint`'s `h2_result`/`consensus_degree`, not just
+/// `h2.rs`'s own unit tests.
+#[test]
+fn request_metric_h2curve_populates_h2_result_and_consensus_degree_on_a_real_simulation() {
+    let mut sim = built_sim(20, false);
+    let buffer = sim
+        .run_batch_checked(
+            1,
+            1,
+            vec![Command::RequestMetric {
+                kind: MetricKind::H2Curve,
+            }],
+        )
+        .unwrap();
+    let cp = &buffer.checkpoints[0];
+    let h2 = cp
+        .scene_fields
+        .h2_result
+        .expect("H2Curve should have populated a real result for 20 distinct boids");
+    assert!(h2.m_star >= 2, "m* should come from the 2..=12 sweep");
+    assert!(h2.h2_at_m_star.is_finite() && h2.h2_at_m_star >= 0.0);
+    assert!(
+        cp.boids
+            .iter()
+            .all(|b| b.checkpoint_fields.consensus_degree.is_some()),
+        "every boid should have a real consensus_degree once H2Curve has run"
+    );
+}
+
+/// Too few boids for any candidate `m` in the sweep: `h2::m_star` returns `None`, so no cache
+/// is populated — `h2_result`/`consensus_degree` stay `None`, not a default/zero value.
+#[test]
+fn request_metric_h2curve_with_too_few_boids_leaves_h2_result_none() {
+    let mut sim = built_sim(2, false);
+    let buffer = sim
+        .run_batch_checked(
+            1,
+            1,
+            vec![Command::RequestMetric {
+                kind: MetricKind::H2Curve,
+            }],
+        )
+        .unwrap();
+    let cp = &buffer.checkpoints[0];
+    assert!(cp.scene_fields.h2_result.is_none());
+    assert!(cp
+        .boids
+        .iter()
+        .all(|b| b.checkpoint_fields.consensus_degree.is_none()));
+}
+
+/// `H2Cache` is a persistent cache (module doc), not a one-shot value: a second checkpoint
+/// captured without a new `RequestMetric` still reports the same result.
+#[test]
+fn h2_result_persists_across_checkpoints_until_a_new_request_metric_or_reset() {
+    let mut sim = built_sim(20, false);
+    sim.run_batch_checked(
+        1,
+        1,
+        vec![Command::RequestMetric {
+            kind: MetricKind::H2Curve,
+        }],
+    )
+    .unwrap();
+    let buffer = sim.run_batch_checked(1, 1, Vec::new()).unwrap();
+    assert!(
+        buffer.checkpoints[0].scene_fields.h2_result.is_some(),
+        "the cached result should still be reported on a later checkpoint with no new request"
+    );
+}
+
+/// A `Reset` invalidates any prior `H2Cache` (batch.rs's own `reset_flock` doc) — the
+/// reinitialized flock's positions/identities have nothing to do with the old result.
+#[test]
+fn reset_command_clears_a_previously_cached_h2_result() {
+    let mut sim = built_sim(20, false);
+    sim.run_batch_checked(
+        1,
+        1,
+        vec![Command::RequestMetric {
+            kind: MetricKind::H2Curve,
+        }],
+    )
+    .unwrap();
+    let buffer = sim
+        .run_batch_checked(
+            1,
+            1,
+            vec![Command::Reset {
+                count: 20,
+                seed: None,
+            }],
+        )
+        .unwrap();
+    assert!(buffer.checkpoints[0].scene_fields.h2_result.is_none());
+}
+
+/// `DensityScaling`/`ShapePCA`/`TauRho` remain a documented no-op (design/05 §3) — the command
+/// is accepted (never rejected as malformed) but never populates `h2_result`.
+#[test]
+fn request_metric_density_scaling_is_a_documented_noop() {
+    let mut sim = built_sim(20, false);
+    let buffer = sim
+        .run_batch_checked(
+            1,
+            1,
+            vec![Command::RequestMetric {
+                kind: MetricKind::DensityScaling,
+            }],
+        )
+        .unwrap();
+    assert!(buffer.checkpoints[0].scene_fields.h2_result.is_none());
+}

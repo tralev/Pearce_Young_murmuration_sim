@@ -27,12 +27,12 @@ pub mod step_hook;
 
 pub use batch::{
     BoidSnapshot, Checkpoint, CheckpointBuffer, Command, CommandError, InterpolationHint,
-    PredatorSnapshot, SessionHeader,
+    MetricKind, PredatorSnapshot, SessionHeader,
 };
 pub use boids::{BoidColumns, Species};
 pub use domain::Domain;
 pub use error::ConfigError;
-pub use h2::{h2_at_m, m_star, H2Result};
+pub use h2::{consensus_degrees, h2_at_m, m_star, H2Result};
 pub use init::{Initializer, NoiseSource};
 pub use kernels::{AlignmentKernel, CohesionKernel, SeparationKernel};
 pub use math::{clamp_len, Vec3, MIN_LEN, MIN_LEN2};
@@ -47,7 +47,7 @@ pub use rng::{sample_unit_sphere, uniform01, Rng};
 pub use spatial_index::SpatialIndex;
 pub use speed_model::SpeedModel;
 pub use step_hook::{
-    BoidCheckpointFields, CsgOp, EnvironmentSnapshot, ObstacleNodeSnapshot,
+    BoidCheckpointFields, CsgOp, EnvironmentSnapshot, H2ResultSnapshot, ObstacleNodeSnapshot,
     ObstaclePrimitiveSnapshot, RippleSnapshot, RippleTrainSnapshot, SceneCheckpointFields, SimView,
     StepHook, WanderSnapshot,
 };

@@ -110,6 +110,11 @@ pub struct Simulation {
     pub(crate) checkpoint_stride: u32,
     pub(crate) next_boid_seed: u64,
     pub(crate) accum_max_displacement: f64,
+    /// The most recent `Command::RequestMetric{H2Curve}` result (batch.rs), if any —
+    /// `crate::batch::H2Cache`'s own doc has the full explanation of why this is a persistent
+    /// cache (read on every checkpoint/snapshot until superseded), not a strict one-shot
+    /// "delivered once" value.
+    pub(crate) h2_cache: Option<crate::batch::H2Cache>,
 }
 
 /// Active plugin names per socket, plus the resolved `CoreParams` — the macro→micro
@@ -249,6 +254,7 @@ impl Simulation {
             checkpoint_stride: 1,
             next_boid_seed: n as u64,
             accum_max_displacement: 0.0,
+            h2_cache: None,
         };
         Ok((simulation, warnings))
     }

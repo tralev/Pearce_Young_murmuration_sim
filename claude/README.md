@@ -326,3 +326,43 @@ a real obstacle and confirming the checkpoint reflects it, plus a rejected-malfo
 `murmur_py`, C smoke test passing against a freshly rebuilt `.dylib` and regenerated header.
 `AddObstacle`/`RemoveObstacle`/`SetEnvironment` — design/05_viz_contract.md §3's entire write
 direction — are now fully wired; only `RequestMetric`'s native H₂ path remains open.
+
+**`RequestMetric{H2Curve}`'s native H₂ path (2026-08-08, next day)** — closes the last open
+piece of design/05_viz_contract.md's entire batch/command contract. The underlying eigensolve
+(`h2_at_m`/`m_star`) already existed in `murmur_core::h2` (Phase 14); this pass wired it to the
+command/checkpoint contract and added the one missing piece of math, `consensus_degrees`
+(design/05 §2.1's per-boid `consensus_degree` — droidmur's own `get_consensus_colors()` overlay
+quantity, a genuinely different, integer-count reduction of the m-NN graph than the Laplacian's
+own real-valued weighted degree the eigensolve itself uses; clamped to `u8::MAX` matching the
+schema's own `Option<u8>` choice).
+
+`Command::RequestMetric` gained a real `kind: MetricKind` field (`H2Curve | DensityScaling |
+ShapePCA | TauRho` — it was field-less before). `H2Curve`'s result is a **persistent cache**
+(`Simulation`'s new `h2_cache` field), not a strict one-shot "delivered on the next checkpoint
+then vanishes" value as design/05's own wording might suggest — a deliberate, disclosed
+simplification: `murmur_py`'s `Simulation.snapshot()` reads checkpoint fields directly, never
+through `Checkpoint`/`capture_checkpoint` at all, so a strict one-shot rule would make the
+result invisible to whichever of the C-ABI checkpoint path or the Python snapshot path didn't
+win the race to consume it. The cache is keyed by each boid's own stable `BoidColumns` slot
+index (not list position), so it stays correctly aligned even if boids are added/removed
+afterward, and is explicitly invalidated by `Command::Reset` (a reinitialized flock's positions
+have nothing to do with the old result) but *not* by a subsequent `RequestMetric` that comes
+back empty (too few boids for any candidate `m` — a transient dip doesn't retroactively discard
+a still-valid prior result).
+
+Surfaced through both consumer surfaces: `murmur_ffi` gained `CH2Result`/`METRIC_*` constants,
+`CBoidSnapshot`/`CCheckpoint` gained `has_consensus_degree`/`consensus_degree` and
+`has_h2_result`/`h2_result` (header regenerated, `CBoidSnapshot` grew to 112 bytes — the size
+test updated with the same "disclosed schema growth" note every prior field addition used);
+`murmur_py`'s `Command` gained `request_metric(kind="h2_curve")`, and `Snapshot` gained a
+`consensus_degree` NaN-sentinel array plus `scene["h2_result"]`. Verified end-to-end at three
+layers: 6 new `murmur_core` integration tests (a real `Simulation` populating both fields,
+too-few-boids leaving them `None`, persistence across a checkpoint with no new request,
+`Reset` clearing the cache, and `DensityScaling`'s own no-op), a `murmur_ffi` C-encoding
+round-trip test plus an extended `c_smoke/main.c`, and 3 Python tests.
+
+597 Rust tests (up from 588), 115 pytest tests (up from 112), clippy/fmt clean including
+`murmur_py`, C smoke test passing. **design/05_viz_contract.md's entire batch/command contract
+(§2 fields, §3 commands) is now fully implemented** — every command has a real handler except
+`DensityScaling`/`ShapePCA`/`TauRho`, which the design doc itself specifies as Python-only for
+v1, not a gap.

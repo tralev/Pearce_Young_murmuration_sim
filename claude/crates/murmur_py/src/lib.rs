@@ -29,8 +29,8 @@ use pyo3::types::PyDict;
 
 use murmur_core::batch::Command;
 use murmur_core::{
-    BoidCheckpointFields, CoreParams, CsgOp, ObstaclePrimitiveSnapshot, PluginParams, Registry,
-    SceneCheckpointFields, SimConfig, Simulation, Species, Vec3,
+    BoidCheckpointFields, CoreParams, CsgOp, MetricKind, ObstaclePrimitiveSnapshot, PluginParams,
+    Registry, SceneCheckpointFields, SimConfig, Simulation, Species, Vec3,
 };
 
 fn map_config_error(e: murmur_core::ConfigError) -> PyErr {
@@ -157,9 +157,16 @@ struct PySnapshot {
     blackening: Py<PyArray1<f64>>,
     #[pyo3(get)]
     spin: Py<PyArray1<f64>>,
+    /// design/05_viz_contract.md §2.1's `consensus_degree` — populated after a real
+    /// `Command.request_metric("h2_curve")`, same `NaN`-sentinel convention as every other
+    /// field here. Not a `StepHook`-published field (there is no such plugin); it comes from
+    /// `murmur_core`'s own native H₂ eigensolve, cached on `Simulation` until superseded.
+    #[pyo3(get)]
+    consensus_degree: Py<PyArray1<f64>>,
     /// design/05_viz_contract.md §2.2's `environment`/`obstacles`/`wander`/`ripple`/
-    /// `dynamic_vision_range` — a plain dict (same pattern `metrics` already uses), each key
-    /// `None` when the composition has no plugin publishing it.
+    /// `dynamic_vision_range`/`h2_result` — a plain dict (same pattern `metrics` already uses),
+    /// each key `None` when the composition has no plugin publishing it (or, for `h2_result`,
+    /// no `Command.request_metric("h2_curve")` has run yet).
     #[pyo3(get)]
     scene: Py<PyDict>,
 }
@@ -168,13 +175,10 @@ struct PySnapshot {
 /// Python — Track B's atomic command-queue contract, previously only reachable from Rust/C
 /// (`murmur_ffi`)/the `reference_desktop` consumer. Only the variants with a real behaviour
 /// behind them today are exposed (`AddPredator`, `RemovePredator`, `SetParam`, `Reset`,
-/// `SetCheckpointStride`, `SetEnvironment`, `AddObstacle`, `RemoveObstacle`) — `RequestMetric`
-/// is still a documented no-op in Rust too (no native H₂-on-checkpoint path exists yet).
-/// Adding a Python constructor for a command that still can't do anything would be misleading,
-/// not useful. `SetParam` only reaches `CoreParams`' live-mutable subset (`cruise_speed`,
-/// `max_force`, `speed_min_factor`, `dt`, `vision_radius`) — plugin-private params (`phi_p`,
-/// `field_strength`, ...) are baked in at construction with no live-mutation path (`batch.rs`'s
-/// own module doc).
+/// `SetCheckpointStride`, `SetEnvironment`, `AddObstacle`, `RemoveObstacle`, `RequestMetric`).
+/// `SetParam` only reaches `CoreParams`' live-mutable subset (`cruise_speed`, `max_force`,
+/// `speed_min_factor`, `dt`, `vision_radius`) — plugin-private params (`phi_p`, `field_strength`,
+/// ...) are baked in at construction with no live-mutation path (`batch.rs`'s own module doc).
 #[pyclass(name = "Command")]
 #[derive(Clone)]
 struct PyCommand {
@@ -295,6 +299,24 @@ impl PyCommand {
     fn remove_obstacle(id: u32) -> Self {
         PyCommand {
             inner: Command::RemoveObstacle { id },
+        }
+    }
+
+    /// Requests a metric (design/05 §3). `kind`: `"h2_curve"` (default — the one native Rust
+    /// path, `murmur_core::h2`; populates `Snapshot.consensus_degree`/`scene["h2_result"]`) or
+    /// `"density_scaling"`/`"shape_pca"`/`"tau_rho"` (Python-only for v1, always a documented
+    /// no-op, not a silent failure).
+    #[staticmethod]
+    #[pyo3(signature = (kind = "h2_curve"))]
+    fn request_metric(kind: &str) -> Self {
+        let kind = match kind {
+            "density_scaling" => MetricKind::DensityScaling,
+            "shape_pca" => MetricKind::ShapePCA,
+            "tau_rho" => MetricKind::TauRho,
+            _ => MetricKind::H2Curve,
+        };
+        PyCommand {
+            inner: Command::RequestMetric { kind },
         }
     }
 }
@@ -997,6 +1019,9 @@ impl PySimulation {
             panic: boid_field_array(py, &fields, |f| f.panic.map(|v| v as f64)),
             blackening: boid_field_array(py, &fields, |f| f.blackening.map(|v| v as f64)),
             spin: boid_field_array(py, &fields, |f| f.spin.map(|v| v as f64)),
+            consensus_degree: boid_field_array(py, &fields, |f| {
+                f.consensus_degree.map(|v| v as f64)
+            }),
             scene: scene_fields_to_dict(py, &self.inner.checkpoint_scene_fields())?.unbind(),
         })
     }
@@ -1060,6 +1085,16 @@ fn scene_fields_to_dict<'py>(
         None => dict.set_item("ripple_trains", py.None())?,
     }
     dict.set_item("dynamic_vision_range", s.dynamic_vision_range)?;
+
+    match s.h2_result {
+        Some(r) => {
+            let h2 = PyDict::new_bound(py);
+            h2.set_item("m_star", r.m_star)?;
+            h2.set_item("h2_at_m_star", r.h2_at_m_star)?;
+            dict.set_item("h2_result", h2)?;
+        }
+        None => dict.set_item("h2_result", py.None())?,
+    }
 
     let obstacles = pyo3::types::PyList::empty_bound(py);
     for node in &s.obstacles {

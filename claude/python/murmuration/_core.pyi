@@ -26,9 +26,13 @@ class Snapshot:
     panic: npt.NDArray[np.float64]  # (N,), read-only
     blackening: npt.NDArray[np.float64]  # (N,), read-only
     spin: npt.NDArray[np.float64]  # (N,), read-only
+    # design/05_viz_contract.md §2.1's consensus_degree -- populated after a real
+    # Command.request_metric("h2_curve"), NaN otherwise (murmur_core's own native H2
+    # eigensolve, not a StepHook-published field).
+    consensus_degree: npt.NDArray[np.float64]  # (N,), read-only
     # design/05_viz_contract.md §2.2's scene-level fields: {"environment": dict|None,
     # "wander": dict|None, "ripple_trains": list[tuple]|None, "dynamic_vision_range": float|None,
-    # "obstacles": list[dict]}.
+    # "obstacles": list[dict], "h2_result": {"m_star": int, "h2_at_m_star": float}|None}.
     scene: Dict[str, Any]
 
 class Command:
@@ -61,6 +65,8 @@ class Command:
     ) -> "Command": ...
     @staticmethod
     def remove_obstacle(id: int) -> "Command": ...
+    @staticmethod
+    def request_metric(kind: str = "h2_curve") -> "Command": ...
 
 class Simulation:
     """A constructed, running simulation. Plugin composition is fixed at construction and

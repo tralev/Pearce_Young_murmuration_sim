@@ -127,6 +127,34 @@ pub fn m_star(pos: &[Vec3], m_values: impl IntoIterator<Item = usize>) -> Option
         .map(|(m, _)| m)
 }
 
+/// Per-node **integer** degree (edge count) in the max-symmetrized m-NN graph `laplacian`
+/// itself builds internally — design/05_viz_contract.md §2.1's `consensus_degree`, droidmur's
+/// own `get_consensus_colors()` overlay quantity. A genuinely different reduction of the same
+/// graph than the Laplacian's own diagonal (that's the real-valued, uniformly-weighted `1/m`
+/// degree the eigensolve itself uses; this is a plain count, the display-facing quantity the
+/// design doc actually names). Each node has exactly `m` outgoing edges (its own kNN); an
+/// incoming edge from another node's own kNN choosing it can add more after symmetrization, so
+/// the true degree is unbounded in principle — clamped to `u8::MAX` to match the schema's own
+/// `Option<u8>` choice (a coarse, bounded display quantity, not a claimed exact count at
+/// extreme values only ever reachable in pathological small-`N` cases).
+pub fn consensus_degrees(pos: &[Vec3], m: usize) -> Vec<u8> {
+    let n = pos.len();
+    let mut adjacent = vec![false; n * n];
+    for i in 0..n {
+        for j in knn_indices(pos, i, m) {
+            adjacent[i * n + j] = true;
+        }
+    }
+    (0..n)
+        .map(|i| {
+            let degree = (0..n)
+                .filter(|&j| j != i && (adjacent[i * n + j] || adjacent[j * n + i]))
+                .count();
+            degree.min(u8::MAX as usize) as u8
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +262,37 @@ mod tests {
     fn m_star_is_none_for_a_population_too_small_for_any_candidate_m() {
         let pos = sample_cloud(3);
         assert_eq!(m_star(&pos, 5..=12), None);
+    }
+
+    #[test]
+    fn consensus_degrees_of_a_hand_verified_1d_chain_matches_the_symmetrized_graph_by_hand() {
+        // 4 points on a line, unevenly spaced so every m=1 nearest-neighbour is unambiguous:
+        // x = 0, 1, 3, 6. Directed 1-NN edges: 0->1, 1->0, 2->1, 3->2. After max-symmetrization
+        // (an edge exists if either direction does): {0,1}, {1,2}, {2,3} -- a simple path graph.
+        // Degrees: node0=1 (only neighbour 1), node1=2 (neighbours 0,2), node2=2 (neighbours
+        // 1,3), node3=1 (only neighbour 2).
+        let pos = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(3.0, 0.0, 0.0),
+            Vec3::new(6.0, 0.0, 0.0),
+        ];
+        assert_eq!(consensus_degrees(&pos, 1), vec![1, 2, 2, 1]);
+    }
+
+    #[test]
+    fn consensus_degrees_of_a_complete_graph_neighbourhood_is_n_minus_1_for_every_node() {
+        // m = n-1: every node's own kNN is literally every other node, so the symmetrized
+        // graph is complete regardless of geometry -- every degree must be exactly n-1.
+        let pos = sample_cloud(6);
+        let degrees = consensus_degrees(&pos, 5);
+        assert_eq!(degrees, vec![5; 6]);
+    }
+
+    #[test]
+    fn consensus_degrees_has_one_entry_per_boid_and_never_panics_on_a_real_cloud() {
+        let pos = sample_cloud(40);
+        let degrees = consensus_degrees(&pos, 6);
+        assert_eq!(degrees.len(), 40);
     }
 }

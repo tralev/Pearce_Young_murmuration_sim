@@ -15,20 +15,63 @@
 //! `SetEnvironment`/`AddObstacle`/`RemoveObstacle`'s write directions are now wired too,
 //! generically via `StepHook::validate_command`/`apply_command` (`ecology`'s and
 //! `murmur_obstacles`'s own implementations are the two real handlers — see `Command`'s own doc
-//! for why each needed real design work, not a direct field overwrite). `RequestMetric` (native
-//! H₂/`DensityScaling`/`ShapePCA`/`TauRho`) and `consensus_degree`/`h2_result` remain documented
-//! no-ops/omitted fields — no native H₂-on-checkpoint path exists yet, a real, disclosed,
-//! separately-scoped follow-up, not this pass's job — same "fix lazily" practice as
-//! roadmap.md's G1–G8.
+//! for why each needed real design work, not a direct field overwrite). `RequestMetric{H2Curve}`
+//! is wired too — `murmur_core::h2`'s own native eigensolve, not a `StepHook` at all, so
+//! `consensus_degree`/`h2_result` are populated directly by `Simulation`'s own checkpoint-field
+//! accessors from a small persistent cache (`H2Cache`, below), not through the generic
+//! `StepHook` merge. `DensityScaling`/`ShapePCA`/`TauRho` remain Python-only for v1 per design/05
+//! §3 — always a documented no-op, not a silent failure.
+
+use std::collections::HashMap;
 
 use crate::boids::Species;
+use crate::h2;
 use crate::math::Vec3;
 use crate::metrics::Metrics;
 use crate::params::CoreParams;
 use crate::pipeline::Simulation;
 use crate::step_hook::{
-    BoidCheckpointFields, CsgOp, ObstaclePrimitiveSnapshot, SceneCheckpointFields,
+    BoidCheckpointFields, CsgOp, H2ResultSnapshot, ObstaclePrimitiveSnapshot, SceneCheckpointFields,
 };
+
+/// Young 2013's own conventional `m*` sweep (`sci/todo.md`, `h2.rs::m_star`'s own doc) — no
+/// `Command::RequestMetric` param for this yet (design/05 §3 names none), matching every other
+/// "no nested structures" flat-command precedent here; a caller wanting a different sweep is a
+/// real, but not yet requested, follow-up.
+const H2_M_SWEEP: std::ops::RangeInclusive<usize> = 2..=12;
+
+/// `Command::RequestMetric{H2Curve}`'s result, cached on `Simulation` (`pipeline.rs`) rather
+/// than delivered as a strict one-shot value: design/05 §2.2's own wording ("populated on the
+/// checkpoint where a result lands") suggests single-delivery, but `murmur_py`'s own
+/// `Simulation.snapshot()` reads `checkpoint_boid_fields`/`checkpoint_scene_fields` directly
+/// (design/05 §4's "Python path keeps the existing per-step contract" — it never goes through
+/// `capture_checkpoint`/`Checkpoint` at all), so a strict "consumed by whichever read happens
+/// first" rule would make the result invisible to whichever of the C-ABI checkpoint path or the
+/// Python snapshot path didn't win the race. A persistent cache — valid on every checkpoint/
+/// snapshot until superseded by the next `RequestMetric{H2Curve}` — sidesteps that raciness
+/// entirely and matches how every other native scene field here already behaves (e.g.
+/// `ecology`'s own `EnvironmentState`), a deliberate, disclosed simplification of the design
+/// doc's own stricter wording.
+#[derive(Debug, Clone)]
+pub struct H2Cache {
+    result: H2ResultSnapshot,
+    /// Keyed by the boid's own `BoidColumns` slot index (the same `u32` every other per-boid
+    /// accessor here uses), not list position — stays correctly aligned even if boids are
+    /// added/removed after this was computed (a boid absent from this map, because it didn't
+    /// exist yet or wasn't active when the request was applied, simply reads back `None`, the
+    /// honest answer).
+    consensus_degree: HashMap<u32, u8>,
+}
+
+/// design/05_viz_contract.md §3's own `RequestMetric` kind vocabulary. `H2Curve` is the one
+/// native Rust path (see the module doc); the other three remain Python-only for v1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetricKind {
+    H2Curve,
+    DensityScaling,
+    ShapePCA,
+    TauRho,
+}
 
 /// Delivered once per `Simulation`, before the first checkpoint (design/05 §2.0). Everything
 /// here is constant for the simulation's lifetime (composition is fixed at construction, D14).
@@ -160,9 +203,12 @@ pub enum Command {
     SetCheckpointStride {
         stride: u32,
     },
-    /// Native H₂ is Track C Phase 14; `DensityScaling`/`ShapePCA`/`TauRho` are Python-only for
-    /// v1 per design/05 §3. Always a documented no-op today, not a silent failure.
-    RequestMetric,
+    /// `H2Curve` computes a real `H2Cache` (native Rust path, `murmur_core::h2`, module doc) —
+    /// `DensityScaling`/`ShapePCA`/`TauRho` are Python-only for v1 per design/05 §3, always a
+    /// documented no-op, not a silent failure.
+    RequestMetric {
+        kind: MetricKind,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -331,9 +377,9 @@ impl Simulation {
                     .step_hooks
                     .iter()
                     .find_map(|h| h.validate_command(command)),
-                Command::RemovePredator { .. } | Command::Reset { .. } | Command::RequestMetric => {
-                    None
-                }
+                Command::RemovePredator { .. }
+                | Command::Reset { .. }
+                | Command::RequestMetric { .. } => None,
             };
             if let Some(reason) = reason {
                 errors.push(CommandError { index, reason });
@@ -393,10 +439,34 @@ impl Simulation {
                 Command::SetCheckpointStride { stride } => {
                     self.checkpoint_stride = stride;
                 }
-                Command::RequestMetric => {
-                    // Native H2/DensityScaling/ShapePCA/TauRho path doesn't exist yet
-                    // (Phase 14) — always a documented no-op today (see module doc).
+                Command::RequestMetric {
+                    kind: MetricKind::H2Curve,
+                } => {
+                    let indices: Vec<u32> = self.boids.iter_active().collect();
+                    let positions: Vec<Vec3> = indices
+                        .iter()
+                        .map(|&i| self.boids.pos[i as usize])
+                        .collect();
+                    if let Some(m) = h2::m_star(&positions, H2_M_SWEEP) {
+                        let result = h2::h2_at_m(&positions, m);
+                        let degrees = h2::consensus_degrees(&positions, m);
+                        self.h2_cache = Some(H2Cache {
+                            result: H2ResultSnapshot {
+                                m_star: m as u32,
+                                h2_at_m_star: result.h2,
+                            },
+                            consensus_degree: indices.into_iter().zip(degrees).collect(),
+                        });
+                    }
+                    // Too few boids for any candidate m (h2::m_star returned None): leaves
+                    // any prior h2_cache in place rather than clearing it -- a transient dip
+                    // below the minimum population doesn't retroactively invalidate the last
+                    // real result, same "don't discard good data for a momentary gap" choice
+                    // Reset's own explicit invalidation (above) doesn't need to make.
                 }
+                // DensityScaling/ShapePCA/TauRho: Python-only for v1 (see module/enum doc) --
+                // always a documented no-op, not a silent failure.
+                Command::RequestMetric { .. } => {}
             }
         }
     }
@@ -436,6 +506,9 @@ impl Simulation {
         self.sim_time = 0.0;
         self.accum_max_displacement = 0.0;
         self.metrics = Metrics::collect(&self.boids, 0, self.core_params.cruise_speed);
+        // A reinitialized flock invalidates any prior H2Curve result -- boid identities and
+        // positions are both gone, so a cached consensus_degree/h2_result would be meaningless.
+        self.h2_cache = None;
     }
 
     fn center_of_mass(&self) -> Vec3 {
@@ -458,9 +531,16 @@ impl Simulation {
     /// means Python surfaces these fields as live per-step state, not by exposing `Checkpoint`
     /// objects the way the C-ABI batch/checkpoint contract does.
     pub fn checkpoint_boid_fields(&self, index: u32) -> BoidCheckpointFields {
+        let native = BoidCheckpointFields {
+            consensus_degree: self
+                .h2_cache
+                .as_ref()
+                .and_then(|c| c.consensus_degree.get(&index).copied()),
+            ..Default::default()
+        };
         self.step_hooks
             .iter()
-            .fold(BoidCheckpointFields::default(), |acc, hook| {
+            .fold(native, |acc, hook| {
                 acc.merge(hook.checkpoint_boid_fields(index))
             })
             .merge(self.modifier.checkpoint_boid_fields(index))
@@ -480,11 +560,13 @@ impl Simulation {
     /// same generic collection as `checkpoint_boid_fields`, called once per checkpoint rather
     /// than once per boid. `pub` for the same reason `checkpoint_boid_fields` is.
     pub fn checkpoint_scene_fields(&self) -> SceneCheckpointFields {
-        self.step_hooks
-            .iter()
-            .fold(SceneCheckpointFields::default(), |acc, hook| {
-                acc.merge(hook.checkpoint_scene_fields())
-            })
+        let native = SceneCheckpointFields {
+            h2_result: self.h2_cache.as_ref().map(|c| c.result),
+            ..Default::default()
+        };
+        self.step_hooks.iter().fold(native, |acc, hook| {
+            acc.merge(hook.checkpoint_scene_fields())
+        })
     }
 
     fn capture_checkpoint(&self, base_seed: u64) -> Checkpoint {

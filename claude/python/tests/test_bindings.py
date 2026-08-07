@@ -284,6 +284,35 @@ def test_add_obstacle_subtract_onto_a_nonexistent_parent_raises_value_error():
         )
 
 
+def test_request_metric_h2_curve_populates_consensus_degree_and_h2_result():
+    # design/05_viz_contract.md §3's RequestMetric{H2Curve} write direction -- proves murmur_
+    # core's own native H2 eigensolve reaches a real composed Simulation from Python, not just
+    # murmur_core's own Rust tests / murmur_ffi's C round trip.
+    sim = make_sim(20)
+    sim.run_batch_checked(1, 1, [m.Command.request_metric("h2_curve")])
+    snap = sim.snapshot()
+
+    h2 = snap.scene["h2_result"]
+    assert h2 is not None
+    assert h2["m_star"] >= 2
+    assert np.isfinite(h2["h2_at_m_star"])
+    assert not np.any(np.isnan(snap.consensus_degree))
+
+
+def test_request_metric_defaults_to_h2_curve_with_no_argument():
+    sim = make_sim(20)
+    sim.run_batch_checked(1, 1, [m.Command.request_metric()])
+    assert sim.snapshot().scene["h2_result"] is not None
+
+
+def test_request_metric_density_scaling_is_a_documented_noop():
+    sim = make_sim(20)
+    sim.run_batch_checked(1, 1, [m.Command.request_metric("density_scaling")])
+    snap = sim.snapshot()
+    assert snap.scene["h2_result"] is None
+    assert np.all(np.isnan(snap.consensus_degree))
+
+
 def test_warnings_is_empty_when_cell_size_already_matches_vision_radius():
     sim = make_sim(10)
     assert sim.warnings() == []

@@ -27,6 +27,12 @@ pub struct BoidCheckpointFields {
     pub panic: Option<f32>,
     pub blackening: Option<f32>,
     pub spin: Option<f32>,
+    /// Per-boid degree in the m-NN consensus graph (design/05 §2.1) — populated from
+    /// `murmur_core::h2::consensus_degrees` after a `Command::RequestMetric{H2Curve}`, not by
+    /// any `StepHook` (there is no such plugin; this is `murmur_core`'s own native
+    /// computation). Lives on this same struct anyway since it's the same shape (`Option<u8>`,
+    /// "empty not absent," merged the same way) every other per-boid field here already uses.
+    pub consensus_degree: Option<u8>,
 }
 
 impl BoidCheckpointFields {
@@ -42,6 +48,7 @@ impl BoidCheckpointFields {
             panic: self.panic.or(other.panic),
             blackening: self.blackening.or(other.blackening),
             spin: self.spin.or(other.spin),
+            consensus_degree: self.consensus_degree.or(other.consensus_degree),
         }
     }
 }
@@ -145,10 +152,21 @@ pub struct ObstacleNodeSnapshot {
     pub parent: Option<u32>,
 }
 
+/// design/05_viz_contract.md §2.2's `H2Result` — `m_star`/`h2_at_m_star` from the most recent
+/// `Command::RequestMetric{H2Curve}` (batch.rs §3, `murmur_core::h2`'s own native eigensolve).
+/// Per-boid detail rides in `BoidCheckpointFields::consensus_degree`, not duplicated here.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct H2ResultSnapshot {
+    pub m_star: u32,
+    pub h2_at_m_star: f64,
+}
+
 /// Scene-level checkpoint fields a `StepHook` may want to publish (design/05_viz_contract.md
 /// §2.2: `environment`, `obstacles`, `wander`, `ripple`, `dynamic_vision_range`). All-empty by
 /// default — costs nothing for a hook with no opinion on any of them. Same generic,
-/// no-plugin-names-in-`murmur_core` construction as `BoidCheckpointFields`.
+/// no-plugin-names-in-`murmur_core` construction as `BoidCheckpointFields`. `h2_result` is the
+/// one field here no `StepHook` ever populates (see `H2ResultSnapshot`'s own doc) — it lives on
+/// this struct anyway for the same reason `consensus_degree` lives on `BoidCheckpointFields`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SceneCheckpointFields {
     pub environment: Option<EnvironmentSnapshot>,
@@ -156,6 +174,7 @@ pub struct SceneCheckpointFields {
     pub wander: Option<WanderSnapshot>,
     pub ripple: Option<RippleSnapshot>,
     pub dynamic_vision_range: Option<f32>,
+    pub h2_result: Option<H2ResultSnapshot>,
 }
 
 impl SceneCheckpointFields {
@@ -177,6 +196,7 @@ impl SceneCheckpointFields {
             wander: self.wander.or(other.wander),
             ripple: self.ripple.or(other.ripple),
             dynamic_vision_range: self.dynamic_vision_range.or(other.dynamic_vision_range),
+            h2_result: self.h2_result.or(other.h2_result),
         }
     }
 }
