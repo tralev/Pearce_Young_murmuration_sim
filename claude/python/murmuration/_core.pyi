@@ -194,6 +194,22 @@ class Simulation:
         ripple_width: float = 3.0,
         ripple_amplitude: float = 0.3,
         ripple_min_cap: float = 0.05,
+        obstacle_kind: float = 0.0,
+        obstacle_center_x: float = 0.0,
+        obstacle_center_y: float = 0.0,
+        obstacle_center_z: float = 0.0,
+        obstacle_radius: float = 5.0,
+        obstacle_half_extent_x: float = 5.0,
+        obstacle_half_extent_y: float = 5.0,
+        obstacle_half_extent_z: float = 5.0,
+        obstacle_axis_x: float = 0.0,
+        obstacle_axis_y: float = 0.0,
+        obstacle_axis_z: float = 1.0,
+        obstacle_half_height: float = 5.0,
+        obstacle_avoidance_radius: float = 5.0,
+        obstacle_push_strength: float = 2.0,
+        obstacle_min_gap: float = 0.1,
+        obstacle_gradient_epsilon: float = 0.001,
     ) -> None: ...
     def step(self, dt: float, seed: int) -> None: ...
     def run_batch(self, steps: int, seed: int) -> None: ...

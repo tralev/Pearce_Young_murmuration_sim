@@ -6,7 +6,8 @@ murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_dom
 murmur_ceiling_speed, murmur_none_speed, murmur_adaptive_index, murmur_hybrid_selection,
 murmur_spatial, murmur_angle, murmur_influencer, murmur_maxent_social, murmur_field,
 murmur_boid_state_machine, murmur_ecology, murmur_dynamic_vision_range,
-murmur_neighbor_adaptive_speed, murmur_speed_noise, murmur_wander, murmur_ripple) were registered in murmur_core's own registry and had real Rust test
+murmur_neighbor_adaptive_speed, murmur_speed_noise, murmur_wander, murmur_ripple,
+murmur_obstacles) were registered in murmur_core's own registry and had real Rust test
 suites, but were never added to
 murmur_py's registry — there was no way to even construct a Simulation using any of them from
 Python. This file exists so that gap can't silently reopen: each plugin gets a small, real
@@ -515,3 +516,30 @@ def test_ripple_step_hook_lowers_mean_speed_when_a_ring_passes_through_the_flock
     quiet.step(1.0, 5)
     assert np.all(np.isfinite(rippling.velocities()))
     assert mean_speed(rippling) < mean_speed(quiet) - 0.02
+
+
+def test_obstacles_step_hook_demonstrably_pushes_a_flock_out_of_a_placed_sphere():
+    sim = m.Simulation(
+        boid_count=200,
+        mode="pearce",
+        phi_p=0.03,
+        phi_a=0.80,
+        step_hooks=["obstacles"],
+        init_radius=8.0,
+        obstacle_kind=0.0,
+        obstacle_radius=6.0,
+        obstacle_avoidance_radius=12.0,
+        obstacle_push_strength=8.0,
+        obstacle_min_gap=0.2,
+        vision_radius=10.0,
+    )
+    initial = np.linalg.norm(sim.positions(), axis=1)
+    initially_inside = int(np.sum(initial < 6.0))
+    assert initially_inside > 0, "test setup sanity check"
+
+    sim.run_batch(150, 11)
+
+    final = sim.positions()
+    assert np.all(np.isfinite(final))
+    finally_inside = int(np.sum(np.linalg.norm(final, axis=1) < 6.0))
+    assert finally_inside < initially_inside

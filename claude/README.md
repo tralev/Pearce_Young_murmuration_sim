@@ -171,34 +171,34 @@ flock genuinely splits across ≥2 anchors rather than collapsing onto one share
 `analysis/force_inference.py` (pairs with `murmur_maxent_social` — maximum-likelihood
 force-channel-weight/reaction-delay estimation from any trajectory, plus AIC-ranked model
 comparison, since raw log-likelihood always weakly favours a larger nested channel set) is now
-built too. Phase 18 (remaining `StepHook` plugins) is in progress: `murmur_boid_state_machine` (per-boid
-Normal/Isolated/Crowded/Threatened classification + a Crowded-only speed-cap multiplier) is
-done, fixing **G1** (`post_steer`'s `ctx.neighbors` was a hardcoded empty placeholder) and
-**G3** (no channel for a `StepHook` to influence `SpeedModel` enforcement) together — both
-verified end to end: a real densely-packed flock ends up measurably slower than a sparse one,
-not just correct in isolated unit calls. `murmur_ecology` (day/night cycle, logistic dusk roost,
-seasonal amplitude, deterministic predator presence, and a real coherence-gate pull toward the
-flock centroid) is also done — only its `predator_rate=0.296` default is empirically grounded
-(Goodenough et al. 2017's own reported figure, `sci/Birds of a feather flock together.pdf`, read
-directly); the dusk/seasonal curve shapes are disclosed as pymurmur's own smoothing choices, not
-claimed fits. `murmur_dynamic_vision_range` (a flock-wide adaptive perception-radius feedback
-loop on average neighbour count, target defaulting to `6.5` — the midpoint of this project's own
-Y-a hard-gate figure, `m* ≈ 6–7`, Young et al. 2013) is done too — the first plugin to actually
-mutate `SimView::core_params` rather than only read it, verified end to end: a real densely-
-packed flock's own `vision_radius` measurably shrinks, and a real sparse flock's measurably
-grows, over a real `Simulation` run. `murmur_neighbor_adaptive_speed` is also done — the same
-G1/G3-powered `post_steer` + `speed_cap_multiplier` shape `murmur_boid_state_machine`
-established, but a continuous linear speed-cap interpolation on local neighbour count instead of
-a discrete state cutoff, verified with the same tight-vs-loose mean-speed proof. `murmur_speed_noise`
-is done too — a smoothed, downward-only stochastic per-boid speed-cap wobble, and the plugin that
-motivated fixing **G8**: `StepHook::post_steer` previously had no path to genuine, `base_seed`-tied
-randomness at all (every prior hook happened to be deterministic). Verified two ways: the same
-`base_seed` reproduces a bit-identical run, and a strong noise amplitude measurably lowers a real
-flock's mean speed. `murmur_wander` is done too — a bounded attractor pull toward the flock's own
-live centroid (not a fixed point, unlike `murmur_influencer`/`murmur_field`), reusing `murmur_field`'s
-own 11-term Lissajous+envelope curve formula plus a closed-form analytic heading; fully
-deterministic, no G8 dependency. `murmur_ripple` is done too — three evenly time-staggered
-travelling Gaussian pulse rings expanding from the flock's own live centroid, publishing each
-boid's own `ripple_envelope_sum` and using it as a downward-only speed-cap wobble via G3; also
-fully deterministic. **All of Phase 18's `StepHook` plugins are now done except `obstacles`**
-(full SDF+CSG, deliberately the largest remaining item, not yet built).
+built too. **Phase 18 (the remaining `StepHook` plugins) is now fully done**: `murmur_boid_state_machine`
+(per-boid Normal/Isolated/Crowded/Threatened classification + a Crowded-only speed-cap
+multiplier) fixed **G1** (`post_steer`'s `ctx.neighbors` was a hardcoded empty placeholder) and
+**G3** (no channel for a `StepHook` to influence `SpeedModel` enforcement) together, verified end
+to end: a real densely-packed flock ends up measurably slower than a sparse one. `murmur_ecology`
+(day/night cycle, logistic dusk roost, seasonal amplitude, deterministic predator presence, and a
+real coherence-gate pull toward the flock centroid) — only its `predator_rate=0.296` default is
+empirically grounded (Goodenough et al. 2017's own reported figure, read directly); the
+dusk/seasonal curve shapes are disclosed as pymurmur's own smoothing choices, not claimed fits.
+`murmur_dynamic_vision_range` (a flock-wide adaptive perception-radius feedback loop, target
+defaulting to `6.5` — the midpoint of this project's own Y-a hard-gate figure, Young et al. 2013)
+was the first plugin to actually mutate `SimView::core_params` rather than only read it.
+`murmur_neighbor_adaptive_speed` reused the same G1/G3-powered shape `murmur_boid_state_machine`
+established, but as a continuous linear interpolation instead of a discrete cutoff.
+`murmur_speed_noise` — a smoothed, downward-only stochastic per-boid speed-cap wobble — was the
+plugin that motivated fixing **G8**: `StepHook::post_steer` previously had no path to genuine,
+`base_seed`-tied randomness at all (every prior hook happened to be deterministic), verified two
+ways: the same `base_seed` reproduces a bit-identical run, and a strong noise amplitude
+measurably lowers a real flock's mean speed. `murmur_wander` — a bounded attractor pull toward
+the flock's own live centroid (not a fixed point, unlike `murmur_influencer`/`murmur_field`) —
+reused `murmur_field`'s own 11-term Lissajous+envelope curve formula plus a closed-form analytic
+heading. `murmur_ripple` — three evenly time-staggered travelling Gaussian pulse rings expanding
+from the flock's own live centroid, publishing each boid's own `ripple_envelope_sum` and using it
+as a downward-only speed-cap wobble via G3. `murmur_obstacles` — the last item, full SDF+CSG
+(`Primitive::Sphere`/`Box`/`Cylinder`, `union`/`subtract`, a numerical central-finite-difference
+gradient, collision detection published via `is_colliding`) — checked and found neither G1's own
+parallel-seam half nor G2 needed; "kinematic surface correction" is a soft avoidance force
+(reusing `murmur_sphere_soft_domain`'s own inverse-distance push formula) rather than a hard
+positional clamp, verified end to end: a flock spawned straddling a placed sphere demonstrably
+moves out of it. G2 (a post-integration position-correction seam for *pairwise* boid–boid
+collision) remains the one open architectural gap — no named plugin in the catalogue needs it.

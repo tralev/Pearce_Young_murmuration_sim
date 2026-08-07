@@ -72,6 +72,7 @@ fn build_registry() -> Registry {
     murmur_speed_noise::register(&mut reg);
     murmur_wander::register(&mut reg);
     murmur_ripple::register(&mut reg);
+    murmur_obstacles::register(&mut reg);
     reg
 }
 
@@ -360,6 +361,22 @@ impl PySimulation {
         ripple_width = 3.0,
         ripple_amplitude = 0.3,
         ripple_min_cap = 0.05,
+        obstacle_kind = 0.0,
+        obstacle_center_x = 0.0,
+        obstacle_center_y = 0.0,
+        obstacle_center_z = 0.0,
+        obstacle_radius = 5.0,
+        obstacle_half_extent_x = 5.0,
+        obstacle_half_extent_y = 5.0,
+        obstacle_half_extent_z = 5.0,
+        obstacle_axis_x = 0.0,
+        obstacle_axis_y = 0.0,
+        obstacle_axis_z = 1.0,
+        obstacle_half_height = 5.0,
+        obstacle_avoidance_radius = 5.0,
+        obstacle_push_strength = 2.0,
+        obstacle_min_gap = 0.1,
+        obstacle_gradient_epsilon = 1e-3,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -519,6 +536,22 @@ impl PySimulation {
         ripple_width: f64,
         ripple_amplitude: f64,
         ripple_min_cap: f64,
+        obstacle_kind: f64,
+        obstacle_center_x: f64,
+        obstacle_center_y: f64,
+        obstacle_center_z: f64,
+        obstacle_radius: f64,
+        obstacle_half_extent_x: f64,
+        obstacle_half_extent_y: f64,
+        obstacle_half_extent_z: f64,
+        obstacle_axis_x: f64,
+        obstacle_axis_y: f64,
+        obstacle_axis_z: f64,
+        obstacle_half_height: f64,
+        obstacle_avoidance_radius: f64,
+        obstacle_push_strength: f64,
+        obstacle_min_gap: f64,
+        obstacle_gradient_epsilon: f64,
     ) -> PyResult<Self> {
         let core_params = CoreParams::builder()
             .cruise_speed(cruise_speed)
@@ -694,7 +727,23 @@ impl PySimulation {
             .with("ripple_speed", ripple_speed)
             .with("ripple_width", ripple_width)
             .with("ripple_amplitude", ripple_amplitude)
-            .with("ripple_min_cap", ripple_min_cap);
+            .with("ripple_min_cap", ripple_min_cap)
+            .with("obstacle_kind", obstacle_kind)
+            .with("obstacle_center_x", obstacle_center_x)
+            .with("obstacle_center_y", obstacle_center_y)
+            .with("obstacle_center_z", obstacle_center_z)
+            .with("obstacle_radius", obstacle_radius)
+            .with("obstacle_half_extent_x", obstacle_half_extent_x)
+            .with("obstacle_half_extent_y", obstacle_half_extent_y)
+            .with("obstacle_half_extent_z", obstacle_half_extent_z)
+            .with("obstacle_axis_x", obstacle_axis_x)
+            .with("obstacle_axis_y", obstacle_axis_y)
+            .with("obstacle_axis_z", obstacle_axis_z)
+            .with("obstacle_half_height", obstacle_half_height)
+            .with("obstacle_avoidance_radius", obstacle_avoidance_radius)
+            .with("obstacle_push_strength", obstacle_push_strength)
+            .with("obstacle_min_gap", obstacle_min_gap)
+            .with("obstacle_gradient_epsilon", obstacle_gradient_epsilon);
 
         let config = SimConfig {
             mode: mode.to_string(),
