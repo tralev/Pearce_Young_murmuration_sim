@@ -197,4 +197,8 @@ randomness at all (every prior hook happened to be deterministic). Verified two 
 flock's mean speed. `murmur_wander` is done too — a bounded attractor pull toward the flock's own
 live centroid (not a fixed point, unlike `murmur_influencer`/`murmur_field`), reusing `murmur_field`'s
 own 11-term Lissajous+envelope curve formula plus a closed-form analytic heading; fully
-deterministic, no G8 dependency. Obstacles (SDF/CSG avoidance) and `ripple` are not built.
+deterministic, no G8 dependency. `murmur_ripple` is done too — three evenly time-staggered
+travelling Gaussian pulse rings expanding from the flock's own live centroid, publishing each
+boid's own `ripple_envelope_sum` and using it as a downward-only speed-cap wobble via G3; also
+fully deterministic. **All of Phase 18's `StepHook` plugins are now done except `obstacles`**
+(full SDF+CSG, deliberately the largest remaining item, not yet built).

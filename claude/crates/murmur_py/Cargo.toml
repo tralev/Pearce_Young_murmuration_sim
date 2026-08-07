@@ -31,6 +31,7 @@ murmur_dynamic_vision_range = { path = "../plugins/murmur_dynamic_vision_range" 
 murmur_neighbor_adaptive_speed = { path = "../plugins/murmur_neighbor_adaptive_speed" }
 murmur_speed_noise = { path = "../plugins/murmur_speed_noise" }
 murmur_wander = { path = "../plugins/murmur_wander" }
+murmur_ripple = { path = "../plugins/murmur_ripple" }
 murmur_field = { path = "../plugins/murmur_field" }
 murmur_maxent_social = { path = "../plugins/murmur_maxent_social" }
 murmur_ceiling_speed = { path = "../plugins/murmur_ceiling_speed" }

@@ -1,0 +1,19 @@
+[package]
+name = "murmur_ripple"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "3-train travelling density-pulse envelope StepHook (roadmap.md Phase 18, design/02_plugins.md pymurmur physics/extensions/ripple.py). Publishes each boid's own ripple_envelope_sum and uses it, via G3, as a gentle downward-only speed-cap wobble as each expanding pulse ring washes over the flock's live centroid."
+
+[dependencies]
+murmur_core = { path = "../../murmur_core" }
+
+[dev-dependencies]
+murmur_conformance = { path = "../../murmur_conformance" }
+murmur_pearce = { path = "../murmur_pearce" }
+murmur_instant_response = { path = "../murmur_instant_response" }
+murmur_open_domain = { path = "../murmur_open_domain" }
+murmur_hash_grid = { path = "../murmur_hash_grid" }
+murmur_radius_gather = { path = "../murmur_radius_gather" }
+murmur_initializers = { path = "../murmur_initializers" }
+rayon = "1"

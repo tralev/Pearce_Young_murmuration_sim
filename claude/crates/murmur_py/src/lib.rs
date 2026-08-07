@@ -71,6 +71,7 @@ fn build_registry() -> Registry {
     murmur_neighbor_adaptive_speed::register(&mut reg);
     murmur_speed_noise::register(&mut reg);
     murmur_wander::register(&mut reg);
+    murmur_ripple::register(&mut reg);
     reg
 }
 
@@ -354,6 +355,11 @@ impl PySimulation {
         wander_envelope_amplitude = 0.3,
         wander_envelope_frequency = 0.01,
         wander_pull_strength = 0.3,
+        ripple_period = 20.0,
+        ripple_speed = 2.0,
+        ripple_width = 3.0,
+        ripple_amplitude = 0.3,
+        ripple_min_cap = 0.05,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -508,6 +514,11 @@ impl PySimulation {
         wander_envelope_amplitude: f64,
         wander_envelope_frequency: f64,
         wander_pull_strength: f64,
+        ripple_period: f64,
+        ripple_speed: f64,
+        ripple_width: f64,
+        ripple_amplitude: f64,
+        ripple_min_cap: f64,
     ) -> PyResult<Self> {
         let core_params = CoreParams::builder()
             .cruise_speed(cruise_speed)
@@ -678,7 +689,12 @@ impl PySimulation {
             .with("wander_phase_z", wander_phase_z)
             .with("wander_envelope_amplitude", wander_envelope_amplitude)
             .with("wander_envelope_frequency", wander_envelope_frequency)
-            .with("wander_pull_strength", wander_pull_strength);
+            .with("wander_pull_strength", wander_pull_strength)
+            .with("ripple_period", ripple_period)
+            .with("ripple_speed", ripple_speed)
+            .with("ripple_width", ripple_width)
+            .with("ripple_amplitude", ripple_amplitude)
+            .with("ripple_min_cap", ripple_min_cap);
 
         let config = SimConfig {
             mode: mode.to_string(),

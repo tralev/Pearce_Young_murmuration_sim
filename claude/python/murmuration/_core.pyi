@@ -189,6 +189,11 @@ class Simulation:
         wander_envelope_amplitude: float = 0.3,
         wander_envelope_frequency: float = 0.01,
         wander_pull_strength: float = 0.3,
+        ripple_period: float = 20.0,
+        ripple_speed: float = 2.0,
+        ripple_width: float = 3.0,
+        ripple_amplitude: float = 0.3,
+        ripple_min_cap: float = 0.05,
     ) -> None: ...
     def step(self, dt: float, seed: int) -> None: ...
     def run_batch(self, steps: int, seed: int) -> None: ...

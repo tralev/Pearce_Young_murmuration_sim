@@ -6,7 +6,7 @@ murmur_young, murmur_margin_domain, murmur_sphere_domain, murmur_sphere_soft_dom
 murmur_ceiling_speed, murmur_none_speed, murmur_adaptive_index, murmur_hybrid_selection,
 murmur_spatial, murmur_angle, murmur_influencer, murmur_maxent_social, murmur_field,
 murmur_boid_state_machine, murmur_ecology, murmur_dynamic_vision_range,
-murmur_neighbor_adaptive_speed, murmur_speed_noise, murmur_wander) were registered in murmur_core's own registry and had real Rust test
+murmur_neighbor_adaptive_speed, murmur_speed_noise, murmur_wander, murmur_ripple) were registered in murmur_core's own registry and had real Rust test
 suites, but were never added to
 murmur_py's registry — there was no way to even construct a Simulation using any of them from
 Python. This file exists so that gap can't silently reopen: each plugin gets a small, real
@@ -489,3 +489,29 @@ def test_wander_step_hook_keeps_a_pearce_flock_bounded_around_its_own_moving_tar
     assert np.all(np.isfinite(positions))
     r_max = float(np.linalg.norm(positions, axis=1).max())
     assert r_max < 200.0, f"expected a strong wander pull to keep R_max bounded, got {r_max}"
+
+
+def test_ripple_step_hook_lowers_mean_speed_when_a_ring_passes_through_the_flock():
+    def mean_speed(sim):
+        return float(np.linalg.norm(sim.velocities(), axis=1).mean())
+
+    common = dict(
+        boid_count=200,
+        mode="pearce",
+        phi_p=0.03,
+        phi_a=0.80,
+        step_hooks=["ripple"],
+        init_radius=3.0,
+        ripple_period=100.0,
+        ripple_speed=1.0,
+        ripple_width=2.0,
+        ripple_min_cap=0.05,
+        cruise_speed=1.0,
+        dt=1.0,
+    )
+    rippling = m.Simulation(ripple_amplitude=1.0, **common)
+    rippling.step(1.0, 5)
+    quiet = m.Simulation(ripple_amplitude=1e-9, **common)
+    quiet.step(1.0, 5)
+    assert np.all(np.isfinite(rippling.velocities()))
+    assert mean_speed(rippling) < mean_speed(quiet) - 0.02
